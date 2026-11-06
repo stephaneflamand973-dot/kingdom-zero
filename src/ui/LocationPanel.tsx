@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  activeContract, applyForJob, businessesForSale, deliver, jobOffer, openOrders, quitJob, takeOrder,
   askPrice, businessesAt, buy, canWork, charactersAt, fullName, getRelation, isOpen, ITEMS, ITEM_ICON, moodOf,
   PROFESSION_NAMES, priceForCharacter, relationLabel, sell, steal, toDate, tradeRefusal, work, qty, outputCap,
   type Business, type GameState, type ItemId,
@@ -43,7 +44,8 @@ export function LocationPanel({ game, onTalk }: { game: Game; onTalk: (id: strin
         </div>
         <div>
           {biz.length > 0 && <h3 className="sub">Établissements</h3>}
-          {biz.length === 0 && <p className="muted">Aucun commerce ici.</p>}
+          {loc.kind === 'square' && <NoticeBoard game={game} />}
+          {biz.length === 0 && loc.kind !== 'square' && <p className="muted">Aucun commerce ici.</p>}
           {biz.map(b => <BusinessCard key={b.id} game={game} b={b} />)}
         </div>
       </div>
@@ -118,6 +120,8 @@ function BusinessCard({ game, b }: { game: Game; b: Business }) {
         </div>
       )}
 
+      <ContractRow game={game} b={b} />
+
       {stealable.length > 0 && (
         <details className="crime">
           <summary>Larcin…</summary>
@@ -131,6 +135,63 @@ function BusinessCard({ game, b }: { game: Game; b: Business }) {
           <p className="muted small">Chaque témoin éveillé peut te surprendre. Discrétion {p.skills.discretion}, agilité {p.attributes.agilite}.</p>
         </details>
       )}
+    </div>
+  );
+}
+
+function ContractRow({ game, b }: { game: Game; b: Business }) {
+  const { state, act } = game;
+  const p = state.characters[state.playerId];
+  const k = activeContract(state, p.id);
+  const mine = state.orders.filter(o => o.status === 'taken' && o.takerId === p.id && o.businessId === b.id);
+  const sale = businessesForSale(state).find(x => x.b.id === b.id);
+  const over = !!state.gameOver;
+  if (b.kind === 'market' && !mine.length && !sale) return null;
+  const offer = jobOffer(state, b, p);
+  return (
+    <div className="contract-row">
+      {k && k.businessId === b.id ? (
+        <div className="work-row">
+          <div className="work-info"><strong>Ta place</strong><span>{k.wage} d/h · {k.hoursThisWeek}/{k.hoursPerWeek} h cette semaine{k.strikes ? ` · ${k.strikes} avertissement` : ''}</span></div>
+          <button className="btn sm ghost" disabled={over} onClick={() => act(quitJob)}>Démissionner</button>
+        </div>
+      ) : b.kind !== 'market' && (
+        <div className="work-row">
+          <div className="work-info"><strong>Place salariée</strong><span>{offer.ok ? `${offer.wage} d/h garantis, ${offer.hours} h par semaine au minimum` : offer.reason}</span></div>
+          <button className="btn sm" disabled={!offer.ok || over} onClick={() => act(s => applyForJob(s, b.id))}>Demander</button>
+        </div>
+      )}
+      {mine.map(o => (
+        <div key={o.id} className="work-row">
+          <div className="work-info"><strong>Commande à livrer</strong><span>{o.qty - o.delivered} {ITEMS[o.item].plural} à {o.unitPrice} d · tu en as {qty(p.inventory, o.item)} · avant le jour {o.deadlineDay + 1}</span></div>
+          <button className="btn sm" disabled={qty(p.inventory, o.item) < 1 || over} onClick={() => act(s => deliver(s, o.id))}>Livrer</button>
+        </div>
+      ))}
+      {sale && <p className="muted small">À vendre : {sale.price} d {sale.seller ? `(${fullName(state.characters[sale.seller])} veut céder son affaire)` : '(sous tutelle de l’intendance)'}. Le rachat par le joueur viendra en phase 3.</p>}
+    </div>
+  );
+}
+
+function NoticeBoard({ game }: { game: Game }) {
+  const { state, act } = game;
+  const p = state.characters[state.playerId];
+  const orders = openOrders(state);
+  const mine = state.orders.filter(o => o.status === 'taken' && o.takerId === p.id);
+  return (
+    <div className="board">
+      <h3 className="sub">Tableau des commandes</h3>
+      <p className="muted small">Les établissements en pénurie y affichent leurs besoins. Livrer à temps rapporte un bon prix et la confiance du client ; manquer sa parole se paie.</p>
+      {orders.length === 0 && <p className="muted">Aucune commande affichée pour l'instant.</p>}
+      <ul className="orders">
+        {orders.map(o => (
+          <li key={o.id}>
+            <span className="ico">{ITEM_ICON[o.item]}</span>
+            <div><b>{o.qty} {ITEMS[o.item].plural}</b> pour {state.businesses[o.businessId].name}<div className="muted small">{o.unitPrice} d pièce · 3 jours pour livrer</div></div>
+            <button className="btn sm" disabled={!!state.gameOver || mine.length >= 2} onClick={() => act(s => takeOrder(s, o.id))}>Accepter</button>
+          </li>
+        ))}
+      </ul>
+      {mine.length > 0 && <p className="small">Tes commandes en cours : {mine.map(o => `${o.qty - o.delivered} ${ITEMS[o.item].plural} → ${state.businesses[o.businessId].name}`).join(' ; ')}</p>}
     </div>
   );
 }

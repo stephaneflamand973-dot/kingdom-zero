@@ -14,7 +14,8 @@ export type SkillId =
 
 export type TraitId =
   | 'travailleur' | 'paresseux' | 'avare' | 'genereux' | 'colerique'
-  | 'sociable' | 'timide' | 'honnete' | 'malhonnete' | 'ambitieux';
+  | 'sociable' | 'timide' | 'honnete' | 'malhonnete' | 'ambitieux'
+  | 'rancunier' | 'loyal' | 'bavard' | 'prudent';
 
 export type ProfessionId =
   | 'fermier' | 'bucheron' | 'mineur' | 'boulanger' | 'aubergiste'
@@ -60,6 +61,17 @@ export interface Activity {
 export type GoalKind = 'trouver_emploi' | 'epargner' | 'prosperer' | 'survivre' | 'servir';
 export interface Goal { kind: GoalKind; target?: number }
 
+/** Ambition de long terme d'un PNJ (phase 2). Pilote des décisions réelles, pas un texte décoratif. */
+export type AmbitionKind = 'ouvrir_commerce' | 'faire_fortune' | 'meilleur_salaire' | 'vengeance' | 'vie_paisible';
+export interface Ambition {
+  kind: AmbitionKind;
+  target?: number;     // somme visée
+  targetId?: string;   // personne visée (vengeance)
+  since: number;       // minute de début
+  count?: number;      // actes accomplis (calomnies…)
+  lastDay?: number;    // jour du dernier acte
+}
+
 export interface Character {
   id: string;
   firstName: string;
@@ -90,6 +102,8 @@ export interface Character {
   hoursWorkedToday: number;
   lastMealTime: number;
   forageProgress: number;  // fraction de fagot ramassé
+  ambition: Ambition;
+  jobSince?: number;      // jour d'embauche dans l'emploi actuel
 }
 
 export type BusinessKind = 'farm' | 'woodlot' | 'mine' | 'bakery' | 'tavern' | 'forge' | 'market' | 'manor';
@@ -131,7 +145,9 @@ export type EventType =
   | 'work' | 'trade' | 'hire' | 'fire' | 'quit' | 'unpaid' | 'argument' | 'friendship'
   | 'gift' | 'theft' | 'theft_caught' | 'fine' | 'death' | 'arrival' | 'sickness'
   | 'shortage' | 'dividend' | 'tax' | 'insult' | 'compliment' | 'rumor' | 'starving'
-  | 'inheritance' | 'production' | 'refusal' | 'chat' | 'help' | 'cold' | 'spoilage';
+  | 'inheritance' | 'production' | 'refusal' | 'chat' | 'help' | 'cold' | 'spoilage'
+  | 'loan' | 'loan_repaid' | 'default' | 'seizure' | 'sale' | 'contract' | 'contract_warning'
+  | 'work_praise' | 'order_posted' | 'order_done' | 'order_failed' | 'slander' | 'festival' | 'rivalry';
 
 export interface WorldEvent {
   id: string;
@@ -147,6 +163,55 @@ export interface WorldEvent {
   witnesses: string[];
   data?: Record<string, number | string>;
 }
+
+/** Prêt d'argent entre personnes. Échéances hebdomadaires, intérêt simple fixé à la signature. */
+export interface Loan {
+  id: string;
+  lenderId: string;       // personnage prêteur
+  borrowerId: string;     // personnage débiteur
+  principal: number;
+  totalDue: number;       // capital + intérêts
+  remaining: number;
+  installment: number;    // montant dû à chaque échéance
+  weeklyRate: number;
+  createdDay: number;
+  nextDueDay: number;
+  finalDueDay: number;
+  missed: number;
+  status: 'active' | 'repaid' | 'defaulted';
+  purpose: string;
+}
+
+/** Contrat de travail du joueur auprès d'un établissement. */
+export interface JobContract {
+  id: string;
+  businessId: string;
+  workerId: string;
+  wage: number;
+  hoursPerWeek: number;
+  startDay: number;
+  hoursThisWeek: number;
+  goodWeeks: number;
+  strikes: number;
+  status: 'active' | 'ended';
+  endReason?: string;
+}
+
+/** Commande d'approvisionnement affichée au tableau de la place. */
+export interface SupplyOrder {
+  id: string;
+  businessId: string;
+  item: ItemId;
+  qty: number;
+  delivered: number;
+  unitPrice: number;
+  postedDay: number;
+  deadlineDay: number;
+  takerId?: string;
+  status: 'open' | 'taken' | 'done' | 'failed' | 'expired';
+}
+
+export interface Festival { day: number; alePaid: number; name: string }
 
 export interface Ledger {
   produced: Inventory;
@@ -187,6 +252,10 @@ export interface GameState {
   ledger: Ledger;
   history: DailySnapshot[];
   stats: { ticks: number; trades: number; npcActions: number };
+  loans: Loan[];
+  contracts: JobContract[];
+  orders: SupplyOrder[];
+  festival?: Festival;
   gameOver?: string;
   /** Mode observateur (tests/simulations) : le joueur n'a ni besoins ni présence. */
   observer?: boolean;

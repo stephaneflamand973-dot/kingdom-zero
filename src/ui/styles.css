@@ -273,3 +273,23 @@ h4 { font-size: .75rem; letter-spacing: .14em; text-transform: uppercase; color:
   .map-legend { display: none; }
   .attrs { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ── Phase 2 : affaires, commandes, réputation ── */
+.dialog-sub { font-size: .78rem; letter-spacing: .14em; text-transform: uppercase; color: #6f4a22; margin: 16px 0 0; }
+.debt-line { display: flex; gap: 16px; font-size: .9rem; color: #4a2a14; border-top: 1px dashed #c4ab7c; padding-top: 6px; }
+.contract-row { display: flex; flex-direction: column; gap: 0; }
+.board { background: rgba(14,10,7,.55); border: 1px solid #6b5132; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+  background-image: repeating-linear-gradient(90deg, rgba(201,162,74,.04) 0 1px, transparent 1px 22px); }
+.orders { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.orders li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border: 1px dashed #6b5132; border-radius: 6px; background: rgba(233,220,192,.04); }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tag { font-size: .78rem; padding: 2px 9px; border-radius: 99px; border: 1px solid var(--line); }
+.tag.good { color: #b5d68a; border-color: #4e6b37; }
+.tag.bad { color: #ff9b7a; border-color: #7a3424; }
+.card-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: rgba(14,10,7,.45); border: 1px solid var(--line-soft); border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; }
+.affaires h4:first-child { margin-top: 0; }
+.btn.feast { border-color: var(--gold); background: linear-gradient(180deg, #6b4a1c, #4a3214); }
+.notice { color: var(--gold-hi); font-style: italic; margin: 8px 0 0; }
+.tabs button { font-size: .64rem; letter-spacing: .04em; }
+.modal .btn.ghost small { color: #7a5c38; }
+.modal .btn.ghost:disabled { opacity: .55; }

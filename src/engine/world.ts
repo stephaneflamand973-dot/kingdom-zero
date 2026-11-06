@@ -4,8 +4,9 @@ import type { AttrId, Business, BusinessKind, Character, GameState, Inventory, I
 import { randInt } from './rng';
 import { absoluteHour } from './sim';
 import { modifyRelation } from './social';
+import { initialAmbition } from './society';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 const LOCATIONS: Location[] = [
   { id: 'square', name: 'Place du Puits', kind: 'square', x: 500, y: 330, description: 'Le cœur de Valcendre : un vieux puits, des bancs de pierre, les nouvelles qui circulent.' },
@@ -43,25 +44,25 @@ interface NpcSpec {
 }
 
 const NPCS: NpcSpec[] = [
-  { id: 'odon', first: 'Odon', last: 'Delaval', age: 52, sex: 'M', prof: 'intendant', home: 'manor', job: 'b_manor', money: 140, traits: ['avare', 'ambitieux'], skills: { gestion: 38, diplomatie: 25, commerce: 15 }, attrs: { intelligence: 7 } },
-  { id: 'bastien', first: 'Bastien', last: 'Roquefort', age: 31, sex: 'M', prof: 'garde', home: 'manor', job: 'b_manor', money: 50, traits: ['colerique', 'honnete'], skills: { combat: 35, commandement: 10 }, attrs: { force: 7, perception: 6 } },
+  { id: 'odon', first: 'Odon', last: 'Delaval', age: 52, sex: 'M', prof: 'intendant', home: 'manor', job: 'b_manor', money: 140, traits: ['avare', 'ambitieux', 'prudent'], skills: { gestion: 38, diplomatie: 25, commerce: 15 }, attrs: { intelligence: 7 } },
+  { id: 'bastien', first: 'Bastien', last: 'Roquefort', age: 31, sex: 'M', prof: 'garde', home: 'manor', job: 'b_manor', money: 50, traits: ['colerique', 'honnete', 'loyal'], skills: { combat: 35, commandement: 10 }, attrs: { force: 7, perception: 6 } },
   { id: 'hugues', first: 'Hugues', last: 'Malestroit', age: 26, sex: 'M', prof: 'garde', home: 'houses_b', job: 'b_manor', money: 35, traits: ['paresseux', 'sociable'], skills: { combat: 28 }, attrs: { perception: 4 } },
-  { id: 'gautier', first: 'Gautier', last: 'Lebrun', age: 47, sex: 'M', prof: 'fermier', home: 'farm', job: 'b_farm', money: 110, traits: ['travailleur', 'avare'], skills: { agriculture: 40, gestion: 22, commerce: 12 } },
+  { id: 'gautier', first: 'Gautier', last: 'Lebrun', age: 47, sex: 'M', prof: 'fermier', home: 'farm', job: 'b_farm', money: 110, traits: ['travailleur', 'avare', 'prudent'], skills: { agriculture: 40, gestion: 22, commerce: 12 } },
   { id: 'martin', first: 'Martin', last: 'Lebrun', age: 19, sex: 'M', prof: 'fermier', home: 'farm', job: 'b_farm', money: 20, traits: ['sociable'], skills: { agriculture: 20 } },
-  { id: 'agnes', first: 'Agnès', last: 'Corbin', age: 34, sex: 'F', prof: 'fermier', home: 'houses_a', job: 'b_farm', money: 30, traits: ['travailleur', 'genereux'], skills: { agriculture: 28 } },
+  { id: 'agnes', first: 'Agnès', last: 'Corbin', age: 34, sex: 'F', prof: 'fermier', home: 'houses_a', job: 'b_farm', money: 30, traits: ['travailleur', 'genereux', 'loyal'], skills: { agriculture: 28 } },
   { id: 'renaud', first: 'Renaud', last: 'Brisefer', age: 39, sex: 'M', prof: 'bucheron', home: 'houses_a', job: 'b_wood', money: 70, traits: ['timide', 'travailleur'], skills: { agriculture: 30 }, attrs: { force: 8 } },
   { id: 'colin', first: 'Colin', last: 'Vautrin', age: 23, sex: 'M', prof: 'bucheron', home: 'houses_a', job: 'b_wood', money: 15, traits: ['malhonnete', 'paresseux'], skills: { agriculture: 14, discretion: 20 } },
-  { id: 'thibault', first: 'Thibault', last: 'Grisard', age: 44, sex: 'M', prof: 'mineur', home: 'houses_b', job: 'b_mine', money: 80, traits: ['colerique', 'travailleur'], skills: { agriculture: 32 }, attrs: { force: 8, endurance: 7 } },
+  { id: 'thibault', first: 'Thibault', last: 'Grisard', age: 44, sex: 'M', prof: 'mineur', home: 'houses_b', job: 'b_mine', money: 80, traits: ['colerique', 'travailleur', 'rancunier'], skills: { agriculture: 32 }, attrs: { force: 8, endurance: 7 } },
   { id: 'perrine', first: 'Perrine', last: 'Fournier', age: 41, sex: 'F', prof: 'boulanger', home: 'bakery', job: 'b_bakery', money: 120, traits: ['genereux', 'sociable'], skills: { artisanat: 38, commerce: 20, gestion: 18 } },
   { id: 'jehan', first: 'Jehan', last: 'Fournier', age: 17, sex: 'M', prof: 'boulanger', home: 'bakery', job: 'b_bakery', money: 12, traits: ['timide'], skills: { artisanat: 16 } },
   { id: 'mathilde', first: 'Mathilde', last: 'Ancelin', age: 45, sex: 'F', prof: 'aubergiste', home: 'tavern', job: 'b_tavern', money: 130, traits: ['sociable', 'ambitieux'], skills: { artisanat: 25, commerce: 30, diplomatie: 30, gestion: 20 }, attrs: { charisme: 7 } },
-  { id: 'clement', first: 'Clément', last: 'Ancelin', age: 21, sex: 'M', prof: 'aubergiste', home: 'tavern', job: 'b_tavern', money: 25, traits: ['sociable', 'paresseux'], skills: { artisanat: 12, diplomatie: 15 } },
+  { id: 'clement', first: 'Clément', last: 'Ancelin', age: 21, sex: 'M', prof: 'aubergiste', home: 'tavern', job: 'b_tavern', money: 25, traits: ['sociable', 'paresseux', 'bavard'], skills: { artisanat: 12, diplomatie: 15 } },
   { id: 'aldric', first: 'Aldric', last: 'Ferrand', age: 50, sex: 'M', prof: 'forgeron', home: 'forge', job: 'b_forge', money: 150, traits: ['honnete', 'colerique'], skills: { artisanat: 40, combat: 20 }, attrs: { force: 8 } },
   { id: 'guillaume', first: 'Guillaume', last: 'Tessier', age: 18, sex: 'M', prof: 'forgeron', home: 'houses_b', job: 'b_forge', money: 10, traits: ['travailleur', 'timide'], skills: { artisanat: 18 } },
   { id: 'bertrand', first: 'Bertrand', last: 'Lombard', age: 38, sex: 'M', prof: 'marchand', home: 'houses_b', job: 'b_market', money: 160, traits: ['avare', 'malhonnete', 'ambitieux'], skills: { commerce: 40, diplomatie: 22, gestion: 25 }, attrs: { intelligence: 7, charisme: 6 } },
   { id: 'isabeau', first: 'Isabeau', last: 'Merle', age: 28, sex: 'F', prof: 'sans_emploi', home: 'houses_a', money: 18, traits: ['ambitieux', 'honnete'], skills: { artisanat: 14, agriculture: 12, commerce: 10 } },
-  { id: 'raoul', first: 'Raoul', last: 'Cassegrain', age: 35, sex: 'M', prof: 'sans_emploi', home: 'houses_a', money: 6, traits: ['malhonnete', 'colerique'], skills: { combat: 22, discretion: 25 } },
-  { id: 'ermengarde', first: 'Ermengarde', last: 'Vasseur', age: 68, sex: 'F', prof: 'sans_emploi', home: 'houses_b', money: 90, traits: ['genereux', 'sociable'], skills: { diplomatie: 30, agriculture: 20 } },
+  { id: 'raoul', first: 'Raoul', last: 'Cassegrain', age: 35, sex: 'M', prof: 'sans_emploi', home: 'houses_a', money: 6, traits: ['malhonnete', 'colerique', 'rancunier'], skills: { combat: 22, discretion: 25 } },
+  { id: 'ermengarde', first: 'Ermengarde', last: 'Vasseur', age: 68, sex: 'F', prof: 'sans_emploi', home: 'houses_b', money: 90, traits: ['genereux', 'sociable', 'bavard'], skills: { diplomatie: 30, agriculture: 20 } },
 ];
 
 const ALL_SKILLS: SkillId[] = ['agriculture', 'artisanat', 'commerce', 'combat', 'diplomatie', 'discretion', 'gestion', 'commandement'];
@@ -75,6 +76,7 @@ export function createWorld(seed: number): GameState {
     village: { name: 'Valcendre', taxRate: 0.05, manorId: 'b_manor', infrastructure: 55 },
     ledger: { produced: {}, consumed: {}, externalMoneyIn: 0, externalMoneyOut: 0, externalItemsIn: {}, removedItems: {} },
     history: [], stats: { ticks: 0, trades: 0, npcActions: 0 },
+    loans: [], contracts: [], orders: [],
   };
   for (const l of LOCATIONS) { state.locations[l.id] = { ...l }; state.locationOrder.push(l.id); }
 
@@ -93,6 +95,7 @@ export function createWorld(seed: number): GameState {
       relations: {}, knownEvents: [],
       activity: { kind: 'sleep', locationId: s.home, since: 0, note: 'Dort chez soi' },
       unpaidWages: 0, hoursWorkedToday: 0, lastMealTime: 0, forageProgress: 0,
+      ambition: { kind: 'vie_paisible', since: 0 },
     };
     state.characters[c.id] = c;
     state.characterOrder.push(c.id);
@@ -108,6 +111,7 @@ export function createWorld(seed: number): GameState {
     skillXp: {}, traits: [], goal: { kind: 'survivre' }, relations: {}, knownEvents: [],
     activity: { kind: 'idle', locationId: 'square', since: 0, note: 'Arrive au village' },
     unpaidWages: 0, hoursWorkedToday: 0, lastMealTime: 0, forageProgress: 0,
+      ambition: { kind: 'vie_paisible', since: 0 },
   };
   state.characters.player = player;
   state.characterOrder.push('player');
@@ -144,6 +148,17 @@ export function createWorld(seed: number): GameState {
   for (const id of state.characterOrder) state.characters[id].relations = { ...state.characters[id].relations };
   // les valeurs initiales ne comptent pas comme interactions
   for (const id of state.characterOrder) for (const r of Object.values(state.characters[id].relations)) r.lastInteraction = -1;
+
+  // Ambitions de long terme (phase 2)
+  for (const id of state.characterOrder) {
+    const c = state.characters[id];
+    if (!c.isPlayer) c.ambition = initialAmbition(state, c);
+  }
+  // Une vieille dette : Gautier a emprunté au marchand pour ses semences de l'an passé
+  state.loans.push({
+    id: 'l1', lenderId: 'bertrand', borrowerId: 'gautier', principal: 100, totalDue: 140, remaining: 140, installment: 35,
+    weeklyRate: 0.1, createdDay: -21, nextDueDay: 7, finalDueDay: 28, missed: 0, status: 'active', purpose: 'pour ses semences',
+  });
 
   return state;
 }

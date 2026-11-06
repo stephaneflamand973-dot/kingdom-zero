@@ -29,6 +29,15 @@ export function checkIntegrity(state: GameState): string[] {
     }
     if (b.ownerId && !state.characters[b.ownerId]?.alive) errs.push(`${id}: propriétaire ${b.ownerId} mort ou inconnu`);
   }
+  for (const l of state.loans) {
+    if (!state.characters[l.lenderId] || !state.characters[l.borrowerId]) errs.push(`${l.id}: prêt vers un inconnu`);
+    if (!Number.isInteger(l.remaining) || l.remaining < 0) errs.push(`${l.id}: reste dû invalide`);
+  }
+  for (const k of state.contracts) {
+    if (k.status !== 'active') continue;
+    const b = state.businesses[k.businessId], w = state.characters[k.workerId];
+    if (!b || !w || !b.employees.includes(w.id) || w.employerId !== b.id) errs.push(`${k.id}: contrat actif incohérent`);
+  }
   if (state.processedHours !== Math.floor((state.time + 360) / 60)) errs.push('horloge et heures simulées désynchronisées');
   return errs;
 }

@@ -1,4 +1,4 @@
-import { drinkAle, eat, forage, formatClock, minutesUntilHour, qty, sleep, sleepOptions, toDate, train, wait } from '../engine';
+import { festivalTonight, feastDrink, drinkAle, eat, forage, formatClock, minutesUntilHour, qty, sleep, sleepOptions, toDate, train, wait } from '../engine';
 import type { Game } from './useGame';
 
 export function ActionPanel({ game }: { game: Game }) {
@@ -8,6 +8,7 @@ export function ActionPanel({ game }: { game: Game }) {
   const d = toDate(state.time);
   const over = !!state.gameOver;
   const food = qty(p.inventory, 'bread') + qty(p.inventory, 'grain');
+  const nextStop = d.hour >= 6 && d.hour < 12 ? { hour: 12, label: 'à midi' } : d.hour >= 12 && d.hour < 18 ? { hour: 18, label: 'à 18h' } : { hour: 6, label: 'au matin' };
   return (
     <section className="panel action-panel">
       <div className="recit">
@@ -24,10 +25,11 @@ export function ActionPanel({ game }: { game: Game }) {
         <div className="action-grid">
           <button className="btn" disabled={over || food < 1} onClick={() => act(eat)} title="15 min">🍞 Manger <small>{food}</small></button>
           <button className="btn" disabled={over || qty(p.inventory, 'ale') < 1} onClick={() => act(drinkAle)} title="20 min">🍺 Boire</button>
+          {loc.kind === 'tavern' && festivalTonight(state) && <button className="btn feast" disabled={over} onClick={() => act(feastDrink)} title="30 min · chope offerte">🎉 Trinquer à la fête</button>}
           {loc.kind === 'woodlot' && <button className="btn" disabled={over} onClick={() => act(s => forage(s, 3))} title="3 h · Agriculture">🪵 Ramasser du bois (3 h)</button>}
           {loc.kind === 'square' && <button className="btn" disabled={over} onClick={() => act(train)} title="1 h · Combat">⚔ S'entraîner</button>}
           <button className="btn ghost" disabled={over} onClick={() => act(s => wait(s, 60))}>⌛ Attendre 1 h</button>
-          <button className="btn ghost" disabled={over} onClick={() => act(s => wait(s, minutesUntilHour(s.time, d.hour < 12 ? 12 : 18)))}>⌛ Jusqu'à {d.hour < 12 ? 'midi' : '18h'}</button>
+<button className="btn ghost" disabled={over} onClick={() => act(s => wait(s, minutesUntilHour(s.time, nextStop.hour)))}>⌛ Jusqu'{nextStop.label}</button>
         </div>
         <h3 className="sub">Repos</h3>
         <div className="action-grid">
@@ -36,6 +38,7 @@ export function ActionPanel({ game }: { game: Game }) {
               onClick={() => act(s => sleep(s, o.mode))}>🌙 {o.label}</button>
           ))}
         </div>
+        {festivalTonight(state) && loc.kind !== 'tavern' && <p className="notice">{state.festival!.name} ce soir à l’auberge : la bière est offerte par l’intendance.</p>}
         {p.needs.hunger >= 75 && <p className="warn">Tu es affamé : ta santé va décliner si tu ne manges pas.</p>}
         {p.needs.energy <= 15 && <p className="warn">Tu tiens à peine debout : repose-toi.</p>}
       </div>

@@ -57,6 +57,15 @@ export function applyBeliefEffect(state: GameState, knowerId: string, ev: WorldE
     case 'fire': modifyRelation(state, knowerId, ev.actorId, -2, -1); break;
     case 'unpaid': modifyRelation(state, knowerId, ev.actorId, -2, -4); break;
     case 'fine': break;
+    case 'default': modifyRelation(state, knowerId, ev.actorId, -2, -12); break;
+    case 'loan_repaid': if (ev.targetId !== knowerId) modifyRelation(state, knowerId, ev.actorId, 0, 4); break;
+    case 'work_praise': case 'order_done': modifyRelation(state, knowerId, ev.actorId, 1, 3); break;
+    case 'order_failed': modifyRelation(state, knowerId, ev.actorId, 0, -4); break;
+    case 'seizure': if (ev.targetId !== knowerId) modifyRelation(state, knowerId, ev.actorId, -3, 0); break; // on n'aime pas les usuriers
+    case 'slander':
+      // rumeur de seconde main : on croit à moitié le colporteur
+      if (ev.targetId && ev.targetId !== knowerId && getRelation(state, knowerId, ev.targetId).affinity < 30) modifyRelation(state, knowerId, ev.targetId, -2, -4);
+      break;
   }
 }
 
@@ -82,7 +91,7 @@ export function shareRumor(state: GameState, speaker: Character, listener: Chara
 }
 
 /** Interactions des personnes qui se trouvent ensemble à la taverne (ou en conversation). */
-export function socialHour(state: GameState, group: Character[]): void {
+export function socialHour(state: GameState, group: Character[], onPair?: (a: Character, b: Character) => void, bonus = 0): void {
   if (group.length < 2) return;
   const order = shuffled(state, group);
   for (let i = 0; i + 1 < order.length; i += 2) {
@@ -90,16 +99,21 @@ export function socialHour(state: GameState, group: Character[]): void {
     if (a.isPlayer || b.isPlayer) continue; // le joueur agit par ses propres actions
     const comp = compatibility(a, b);
     const roll = rand(state) * 2 - 1;
-    const delta = Math.round(3 * comp + 2 * roll + 1);
+    const delta = Math.round(3 * comp + 2 * roll + 1 + bonus);
     const before = getRelation(state, a.id, b.id).affinity;
     modifyRelation(state, a.id, b.id, delta, delta > 0 ? 1 : 0);
     modifyRelation(state, b.id, a.id, delta, delta > 0 ? 1 : 0);
     a.needs.social = clamp(a.needs.social + 12, 0, 100);
     b.needs.social = clamp(b.needs.social + 12, 0, 100);
     state.stats.npcActions += 1;
-    // Rumeurs
+    // Rumeurs (les bavards en colportent davantage)
     shareRumor(state, a, b);
     shareRumor(state, b, a);
+    if (hasTrait(a, 'bavard')) shareRumor(state, a, b);
+    if (hasTrait(b, 'bavard')) shareRumor(state, b, a);
+    onPair?.(a, b);
+    onPair?.(b, a);
+    const beforeB = before;
     // Dispute : tempéraments explosifs et relation déjà dégradée
     const rab = getRelation(state, a.id, b.id);
     if ((hasTrait(a, 'colerique') || hasTrait(b, 'colerique')) && rab.affinity < -10 && chance(state, 0.25)) {
@@ -109,6 +123,12 @@ export function socialHour(state: GameState, group: Character[]): void {
         type: 'argument', actorId: hasTrait(a, 'colerique') ? a.id : b.id, targetId: hasTrait(a, 'colerique') ? b.id : a.id,
         locationId: a.locationId, importance: 2,
         text: `${fullName(a)} et ${fullName(b)} se disputent violemment à ${state.locations[a.locationId].name}.`,
+        witnesses: group.map(g => g.id),
+      });
+    } else if (beforeB > -30 && rab.affinity <= -30 && !a.knownEvents.some(id => { const e = getEvent(state, id); return e?.type === 'rivalry' && ((e.actorId === a.id && e.targetId === b.id) || (e.actorId === b.id && e.targetId === a.id)); })) {
+      logEvent(state, {
+        type: 'rivalry', actorId: a.id, targetId: b.id, locationId: a.locationId, importance: 2,
+        text: `${fullName(a)} et ${fullName(b)} ne se supportent plus : une rivalité est née.`,
         witnesses: group.map(g => g.id),
       });
     } else if (before < 30 && rab.affinity >= 30) {

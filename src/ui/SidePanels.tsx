@@ -1,18 +1,21 @@
 import { useState } from 'react';
 import {
-  aliveCharacters, allBusinesses, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
+  toDate, aliveCharacters, allBusinesses, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
+  activeContract, activeLoans, ambitionLabel, quitJob, repayLoan, reputationTags,
   moodOf, PROFESSION_NAMES, qty, referencePrice, relationLabel, reputation, reputationLabel, SKILL_NAMES, xpForNextLevel,
   type AttrId, type GameState, type ItemId, type SkillId, type WorldEvent,
 } from '../engine';
 import { ACTIVITY_COLOR } from './VillageMap';
+import type { Game } from './useGame';
 
-type Tab = 'perso' | 'inv' | 'rel' | 'journal' | 'monde';
+type Tab = 'perso' | 'inv' | 'affaires' | 'rel' | 'journal' | 'monde';
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'perso', label: 'Personnage' }, { id: 'inv', label: 'Inventaire' }, { id: 'rel', label: 'Relations' },
+  { id: 'perso', label: 'Personnage' }, { id: 'inv', label: 'Besace' }, { id: 'affaires', label: 'Affaires' }, { id: 'rel', label: 'Relations' },
   { id: 'journal', label: 'Journal' }, { id: 'monde', label: 'Monde' },
 ];
 
-export function SidePanels({ state, onTalk }: { state: GameState; onTalk: (id: string) => void }) {
+export function SidePanels({ game, onTalk }: { game: Game; onTalk: (id: string) => void }) {
+  const { state } = game;
   const [tab, setTab] = useState<Tab>('perso');
   return (
     <section className="panel side">
@@ -22,6 +25,7 @@ export function SidePanels({ state, onTalk }: { state: GameState; onTalk: (id: s
       <div className="tab-body">
         {tab === 'perso' && <Perso state={state} />}
         {tab === 'inv' && <Inv state={state} />}
+        {tab === 'affaires' && <Affaires game={game} />}
         {tab === 'rel' && <Rel state={state} onTalk={onTalk} />}
         {tab === 'journal' && <Journal state={state} />}
         {tab === 'monde' && <Monde state={state} />}
@@ -38,6 +42,7 @@ const GOALS: Record<string, string> = {
 function Perso({ state }: { state: GameState }) {
   const p = state.characters[state.playerId];
   const rep = reputation(state, p.id);
+  const tags = reputationTags(state, p.id);
   return (
     <div className="perso">
       <div className="perso-head">
@@ -45,6 +50,11 @@ function Perso({ state }: { state: GameState }) {
         <div className="rep"><div className="tb-sub">Réputation</div><strong>{reputationLabel(rep.score, rep.known)}</strong><div className="muted small">{rep.known} personne{rep.known > 1 ? 's' : ''} te connaissent</div></div>
       </div>
       <p className="goal">🎯 {GOALS[p.goal.kind]}</p>
+      {tags.length > 0 && (
+        <div className="tags" title="Ce que les habitants savent de toi, et combien le savent">
+          {tags.map(t => <span key={t.tag} className={`tag ${t.good ? 'good' : 'bad'}`}>{t.tag} · {t.known}</span>)}
+        </div>
+      )}
       <h4>Attributs</h4>
       <div className="attrs">
         {(Object.keys(ATTR_NAMES) as AttrId[]).map(a => <div key={a} className="attr"><span>{ATTR_NAMES[a]}</span><b>{p.attributes[a]}</b></div>)}
@@ -83,6 +93,52 @@ function Inv({ state }: { state: GameState }) {
       <ul className="inv">
         {items.map(i => <li key={i}><span className="ico big">{ITEM_ICON[i]}</span><div><b>{qty(p.inventory, i)} × {qty(p.inventory, i) > 1 ? ITEMS[i].plural : ITEMS[i].name}</b><div className="muted small">{ITEMS[i].food ? `Nourriture (−${ITEMS[i].food} faim)` : 'Marchandise'} · ~{referencePrice(state, i) ?? ITEMS[i].base} d pièce</div></div></li>)}
       </ul>
+    </div>
+  );
+}
+
+function Affaires({ game }: { game: Game }) {
+  const { state, act } = game;
+  const p = state.characters[state.playerId];
+  const over = !!state.gameOver;
+  const k = activeContract(state, p.id);
+  const owes = activeLoans(state, { borrowerId: p.id });
+  const owed = activeLoans(state, { lenderId: p.id });
+  const orders = state.orders.filter(o => o.takerId === p.id && o.status === 'taken');
+  const day = toDate(state.time).day;
+  const past = [...state.loans.filter(l => (l.borrowerId === p.id || l.lenderId === p.id) && l.status !== 'active')].slice(-4);
+  return (
+    <div className="affaires">
+      <h4>Emploi</h4>
+      {k ? (
+        <div className="card-line">
+          <div><b>{state.businesses[k.businessId].name}</b> · {k.wage} d/h<div className="muted small">{k.hoursThisWeek} h sur {k.hoursPerWeek} h exigées cette semaine · {k.goodWeeks} semaine{k.goodWeeks > 1 ? 's' : ''} satisfaisante{k.goodWeeks > 1 ? 's' : ''}{k.strikes ? ` · ${k.strikes} avertissement` : ''}</div></div>
+          <button className="btn sm ghost" disabled={over} onClick={() => act(quitJob)}>Démissionner</button>
+        </div>
+      ) : <p className="muted small">Aucune place. Travaille à la journée, puis demande une place à un patron qui te connaît.</p>}
+      <h4>Tes dettes</h4>
+      {owes.length === 0 && <p className="muted small">Tu ne dois rien à personne.</p>}
+      {owes.map(l => (
+        <div key={l.id} className="card-line">
+          <div><b>{l.remaining} d</b> à {fullName(state.characters[l.lenderId])}<div className="muted small">Échéance de {l.installment} d dans {Math.max(0, l.nextDueDay - day)} j · {l.missed ? `${l.missed} échéance manquée · ` : ''}{l.purpose}</div></div>
+          <div className="slot-btns">
+            <button className="btn sm" disabled={over || p.money < 1} onClick={() => act(s => repayLoan(s, l.id, l.installment))}>Verser {Math.min(l.installment, l.remaining)} d</button>
+            <button className="btn sm ghost" disabled={over || p.money < l.remaining} onClick={() => act(s => repayLoan(s, l.id))}>Solder</button>
+          </div>
+        </div>
+      ))}
+      {owes.length > 0 && <p className="muted small">Les échéances sont prélevées d’office chaque semaine. Deux échéances manquées valent défaut : saisie de ta bourse et de tes biens, et la nouvelle se répand.</p>}
+      <h4>On te doit</h4>
+      {owed.length === 0 && <p className="muted small">Personne ne te doit d’argent.</p>}
+      {owed.map(l => (
+        <div key={l.id} className="card-line"><div><b>{l.remaining} d</b> par {fullName(state.characters[l.borrowerId])}<div className="muted small">{l.installment} d par semaine · prochaine échéance dans {Math.max(0, l.nextDueDay - day)} j{l.missed ? ` · ${l.missed} manquée` : ''}</div></div></div>
+      ))}
+      <h4>Commandes en cours</h4>
+      {orders.length === 0 && <p className="muted small">Aucune. Le tableau des commandes est sur la Place du Puits.</p>}
+      {orders.map(o => (
+        <div key={o.id} className="card-line"><div><b>{o.qty - o.delivered} {ITEMS[o.item].plural}</b> pour {state.businesses[o.businessId].name}<div className="muted small">{o.unitPrice} d pièce · à livrer sur place d’ici {Math.max(0, o.deadlineDay - day)} j · tu en as {qty(p.inventory, o.item)}</div></div></div>
+      ))}
+      {past.length > 0 && <><h4>Historique</h4>{past.map(l => <p key={l.id} className="muted small">{l.borrowerId === p.id ? `Emprunt de ${l.principal} d à ${state.characters[l.lenderId].firstName}` : `Prêt de ${l.principal} d à ${state.characters[l.borrowerId].firstName}`} — {l.status === 'repaid' ? 'remboursé' : 'défaut'}</p>)}</>}
     </div>
   );
 }
@@ -185,7 +241,8 @@ function Monde({ state }: { state: GameState }) {
             <li key={c.id}>
               <i style={{ background: ACTIVITY_COLOR[c.activity.kind] }} />
               <div><b>{fullName(c)}</b> <span className="muted small">{PROFESSION_NAMES[c.profession]}, {c.age} ans · {moodOf(c)}</span>
-                <div className="small">{c.activity.note} — <span className="muted">{state.locations[c.locationId].name}</span></div></div>
+                <div className="small">{c.activity.note} — <span className="muted">{state.locations[c.locationId].name}</span></div>
+                <div className="small muted">Ambition : {ambitionLabel(state, c)}</div></div>
             </li>
           ))}
           {state.characterOrder.filter(id => !state.characters[id].alive).map(id => (

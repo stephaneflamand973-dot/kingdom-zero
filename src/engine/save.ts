@@ -2,6 +2,7 @@
 import { checkIntegrity } from './invariants';
 import type { GameState } from './types';
 import { SAVE_VERSION } from './world';
+import { initialAmbition } from './society';
 
 export interface SaveFile { format: 'KINGDOM_ZERO_SAVE'; version: number; savedAt: string; checksum: string; state: GameState }
 
@@ -19,7 +20,19 @@ export function serialize(state: GameState, savedAt = new Date().toISOString()):
 }
 
 /** Migrations de format : version n → n+1. */
-const MIGRATIONS: Record<number, (s: GameState) => GameState> = {};
+const MIGRATIONS: Record<number, (s: GameState) => GameState> = {
+  // v1 → v2 (phase 2) : dettes, contrats, commandes, ambitions des PNJ
+  1: s => {
+    s.loans ??= [];
+    s.contracts ??= [];
+    s.orders ??= [];
+    for (const id of s.characterOrder) {
+      const c = s.characters[id];
+      if (!c.ambition) c.ambition = c.isPlayer ? { kind: 'vie_paisible', since: s.time } : initialAmbition(s, c);
+    }
+    return s;
+  },
+};
 
 export function deserialize(text: string): { state?: GameState; error?: string; savedAt?: string } {
   let file: SaveFile;

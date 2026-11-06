@@ -24,7 +24,7 @@ export function App() {
         </div>
         <div className="col-side">
           <ActionPanel game={game} />
-          <SidePanels state={state} onTalk={setTalkTo} />
+          <SidePanels game={game} onTalk={setTalkTo} />
         </div>
       </main>
       {talkTo && <NpcDialog game={game} npcId={talkTo} onClose={() => setTalkTo(null)} />}

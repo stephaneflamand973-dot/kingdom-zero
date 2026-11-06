@@ -13,7 +13,10 @@ import { gainXp } from './skills';
 import { socialHour } from './social';
 import { MIN_PER_DAY, MIN_PER_HOUR, START_OFFSET_MIN, toDate, DAYS_PER_YEAR } from './time';
 import type { Character, GameState, Inventory, ItemId } from './types';
-import { addItem, aliveCharacters, allBusinesses, clamp, fullName, newId, npcs, ownedBusiness, qty } from './util';
+import { addItem, aliveCharacters, allBusinesses, clamp, fullName, hasTrait, newId, npcs, qty } from './util';
+import { npcBorrowing, ownedBusinesses, processLoans } from './finance';
+import { merchantFulfils, postOrder, processOrders, weeklyContractReview } from './contracts';
+import { festivalTonight, initialAmbition, jobHopping, processAmbitions, startFestival, trySlander } from './society';
 import { ITEM_IDS } from './data';
 
 export const HUNGER_PER_HOUR = 4;
@@ -107,24 +110,39 @@ export function hourTick(state: GameState): void {
       b.laborPool += productivity;
     }
     c.hoursWorkedToday += 1;
+    if (c.isPlayer) {
+      const k = state.contracts.find(x => x.status === 'active' && x.workerId === c.id && x.businessId === b.id);
+      if (k) k.hoursThisWeek += 1;
+    }
     gainXp(state, c, skill, 1);
-    payWage(state, b, c, c.isPlayer ? c.activity.wage ?? b.wage : b.wage);
+    if (b.ownerId !== c.id) payWage(state, b, c, c.isPlayer ? c.activity.wage ?? b.wage : b.wage);
   }
 
-  // 3. Production
-  for (const b of allBusinesses(state)) runProduction(state, b);
+  // 3. Production ; une pénurie d'intrant fait afficher une commande au tableau
+  for (const b of allBusinesses(state)) {
+    runProduction(state, b);
+    for (const [item, day] of Object.entries(b.lastShortageDay)) {
+      if (day === d.day && (ITEM_IDS as string[]).includes(item) && b.buys.includes(item as ItemId)) postOrder(state, b, item as ItemId);
+    }
+  }
 
   // 4. Décès éventuels
   for (const c of people) if (c.alive && c.health <= 0) killCharacter(state, c, c.needs.hunger >= 100 ? 'de faim' : c.sick > 0 ? 'de maladie' : c.needs.energy <= 0 ? "d'épuisement" : 'de privations');
   if (state.gameOver) return;
 
-  // 5. Gestion du matin
+  // 5. Gestion du matin : mobilité (lundi), emprunts de survie, puis gestion
+  if (d.hour === 7) {
+    if (d.weekday === 0 && d.day > 0) jobHopping(state);
+    npcBorrowing(state);
+  }
   if (d.hour === 7 || d.hour === 13) for (const b of allBusinesses(state)) manageBusiness(state, b, d.hour === 13);
+  if (d.hour === 13) merchantFulfils(state);
+  if (d.hour === 17 && d.dayOfSeason === 1) startFestival(state);
 
   // 6. Démissions pour salaires impayés
   for (const c of npcs(state)) {
     const b = c.employerId ? state.businesses[c.employerId] : undefined;
-    if (b && b.ownerId !== c.id && c.unpaidWages >= b.wage * 16) {
+    if (b && b.ownerId !== c.id && c.unpaidWages >= b.wage * (hasTrait(c, 'loyal') ? 32 : 16)) {
       fireEmployee(state, b, c, `${c.unpaidWages} d de salaires impayés`, true);
     }
   }
@@ -137,7 +155,8 @@ export function hourTick(state: GameState): void {
   for (const c of aliveCharacters(state)) {
     if (c.activity.kind === 'socialize') (groups[c.locationId] ??= []).push(c);
   }
-  for (const id of Object.keys(groups).sort()) socialHour(state, groups[id]);
+  const bonus = festivalTonight(state) ? 2 : 0;
+  for (const id of Object.keys(groups).sort()) socialHour(state, groups[id], (a, b) => { trySlander(state, a, b); }, bonus);
 
   if (d.hour === 0) dayTick(state);
 }
@@ -153,7 +172,7 @@ export function dayTick(state: GameState): void {
     // Le temps apaise les rancunes et use les amitiés non entretenues
     for (const r of Object.values(c.relations)) {
       if (r.affinity > 0 && state.time - r.lastInteraction > MIN_PER_DAY * 7) r.affinity -= 1;
-      else if (r.affinity < 0 && chance(state, 0.5)) r.affinity += 1;
+      else if (r.affinity < 0 && chance(state, hasTrait(c, 'rancunier') ? 0.1 : 0.5)) r.affinity += 1;
       if (r.trust < 0 && chance(state, 0.35)) r.trust += 1;
     }
   }
@@ -243,6 +262,13 @@ export function dayTick(state: GameState): void {
     migration(state);
   }
 
+  // Phase 2 : dettes, commandes, ambitions, contrats
+  processLoans(state);
+  processOrders(state);
+  processAmbitions(state);
+  if (d.weekday === 0 && d.day > 0) weeklyContractReview(state);
+  if (state.festival && state.festival.day < d.day) state.festival = undefined;
+
   snapshot(state);
   pruneEvents(state);
 }
@@ -282,8 +308,7 @@ export function killCharacter(state: GameState, c: Character, cause: string): vo
   }
   c.activity = { kind: 'dead', locationId: c.locationId, since: state.time, note: `Mort ${cause}` };
   // Biens : sans famille, l'héritage revient à l'intendance du village
-  const owned = ownedBusiness(state, c);
-  if (owned) {
+  for (const owned of ownedBusinesses(state, c)) {
     const heir = owned.employees.map(id => state.characters[id]).filter(e => e.alive && !e.isPlayer)
       .sort((a, b) => b.skills.gestion - a.skills.gestion || (a.id < b.id ? -1 : 1))[0];
     if (heir) {
@@ -291,6 +316,7 @@ export function killCharacter(state: GameState, c: Character, cause: string): vo
       owned.ownerId = heir.id;
       heir.employerId = owned.id;
       heir.goal = { kind: 'prosperer' };
+      heir.ambition = { kind: 'faire_fortune', since: state.time };
     } else {
       owned.ownerId = null;
     }
@@ -335,11 +361,13 @@ function migration(state: GameState): void {
     needs: { hunger: 30, energy: 70, social: 40 },
     attributes: { force: randInt(state, 3, 7), endurance: randInt(state, 3, 7), agilite: randInt(state, 3, 7), intelligence: randInt(state, 3, 7), charisme: randInt(state, 3, 7), perception: randInt(state, 3, 7), volonte: randInt(state, 3, 7) },
     skills: { agriculture: randInt(state, 5, 30), artisanat: randInt(state, 5, 25), commerce: randInt(state, 0, 15), combat: randInt(state, 0, 15), diplomatie: randInt(state, 0, 15), discretion: randInt(state, 0, 15), gestion: randInt(state, 0, 10), commandement: 0 },
-    skillXp: {}, traits: [pick(state, ['travailleur', 'sociable', 'timide', 'honnete', 'malhonnete', 'paresseux'] as const)],
+    skillXp: {}, traits: [pick(state, ['travailleur', 'sociable', 'timide', 'honnete', 'malhonnete', 'paresseux'] as const), pick(state, ['ambitieux', 'loyal', 'bavard', 'prudent', 'rancunier', 'genereux'] as const)],
     goal: { kind: 'trouver_emploi' }, relations: {}, knownEvents: [],
     activity: { kind: 'idle', locationId: state.locationOrder[0], since: state.time, note: 'Vient d’arriver au village' },
     unpaidWages: 0, hoursWorkedToday: 0, lastMealTime: state.time, forageProgress: 0,
+    ambition: { kind: 'vie_paisible', since: state.time },
   };
+  c.ambition = initialAmbition(state, c);
   state.characters[id] = c;
   state.characterOrder.push(id);
   state.ledger.externalMoneyIn += money;

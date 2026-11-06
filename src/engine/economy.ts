@@ -333,6 +333,7 @@ export function hireBest(state: GameState, b: Business, candidates?: Character[]
   if (!scored.length) return undefined;
   const hired = scored[0].c;
   hired.employerId = b.id;
+  hired.jobSince = toDate(state.time).day;
   hired.profession = role ?? (b.kind === 'manor' ? 'journalier' : PROFESSION_BY_BUSINESS[b.kind]);
   hired.goal = { kind: 'epargner', target: hired.money + 150 };
   b.employees.push(hired.id);
@@ -346,6 +347,8 @@ export function hireBest(state: GameState, b: Business, candidates?: Character[]
 }
 
 export function fireEmployee(state: GameState, b: Business, e: Character, reason: string, quit = false): void {
+  // Un contrat de travail en cours prend fin avec le départ
+  for (const k of state.contracts ?? []) if (k.status === 'active' && k.workerId === e.id && k.businessId === b.id) { k.status = 'ended'; k.endReason = reason; }
   b.employees = b.employees.filter(id => id !== e.id);
   e.employerId = undefined;
   e.profession = 'sans_emploi';

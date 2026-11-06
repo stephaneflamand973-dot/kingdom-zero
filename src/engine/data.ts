@@ -60,7 +60,7 @@ export const ATTR_NAMES: Record<AttrId, string> = {
 export const TRAIT_NAMES: Record<TraitId, string> = {
   travailleur: 'Travailleur', paresseux: 'Paresseux', avare: 'Avare', genereux: 'Généreux',
   colerique: 'Colérique', sociable: 'Sociable', timide: 'Timide', honnete: 'Honnête',
-  malhonnete: 'Malhonnête', ambitieux: 'Ambitieux',
+  malhonnete: 'Malhonnête', ambitieux: 'Ambitieux', rancunier: 'Rancunier', loyal: 'Loyal', bavard: 'Bavard', prudent: 'Prudent',
 };
 export const PROFESSION_NAMES: Record<ProfessionId, string> = {
   fermier: 'Fermier', bucheron: 'Bûcheron', mineur: 'Mineur', boulanger: 'Boulanger',

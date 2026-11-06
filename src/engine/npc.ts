@@ -8,6 +8,8 @@ import { ITEMS } from './data';
 import { attemptTheft } from './crime';
 import { askPrice, hireBest, isHiring, outputCap, P, priceForCharacter, sellersOf, trade, tradeRefusal, transferItem, transferMoney } from './economy';
 import { toDate } from './time';
+import { friendlyLoan } from './finance';
+import { festivalTonight, serveFestivalAle } from './society';
 import { logEvent } from './events';
 import { chance } from './rng';
 import { getRelation, modifyRelation } from './social';
@@ -127,14 +129,31 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
     opts.push({ score: s, run: () => setActivity(state, c, 'forage', wood, 'Ramasse du bois mort en lisière') });
   }
 
-  // Sociabiliser à la taverne
+  // Sociabiliser à la taverne (la fête de saison attire tout le village)
   const tavern = allBusinesses(state).find(b => b.kind === 'tavern');
-  if (tavern && hour >= 17 && hour < 23 && n.social < 85 && n.energy > 15) {
-    let s = 30 + (100 - n.social) * 0.45;
+  const feast = festivalTonight(state);
+  if (tavern && hour >= 17 && hour < 23 && (n.social < 85 || feast) && n.energy > 15) {
+    let s = 30 + (100 - n.social) * 0.45 + (feast ? 45 : 0);
     if (hasTrait(c, 'sociable')) s += 15;
     if (hasTrait(c, 'timide')) s -= 15;
     if (hour >= 22) s -= 20;
     opts.push({ score: s, run: () => socialize(state, c, tavern, hour) });
+  }
+
+  // Vengeance nocturne : un malhonnête rancunier vole dans l'affaire de son ennemi
+  const a = c.ambition;
+  if (a.kind === 'vengeance' && a.targetId && hasTrait(c, 'malhonnete') && hour === 23 && chance(state, 0.15)) {
+    const target = allBusinesses(state).find(b => b.ownerId === a.targetId);
+    const item = target && (Object.keys(target.stock) as ItemId[]).filter(i => qty(target.stock, i) > 0)
+      .sort((x, y) => ITEMS[y].base - ITEMS[x].base)[0];
+    if (target && item) {
+      opts.push({ score: 99, run: () => {
+        c.locationId = target.locationId;
+        const out = attemptTheft(state, c, target, item, 1);
+        a.count = (a.count ?? 0) + 1;
+        setActivity(state, c, 'shop', target.locationId, 'caught' in out && out.caught ? 'Surpris en train de se venger !' : 'Rôde de nuit autour d’une échoppe', target.id);
+      } });
+    }
   }
 
   // Par défaut : vaquer chez soi
@@ -194,6 +213,11 @@ function seekHelp(state: GameState, c: Character, hour: number): void {
       return;
     }
   }
+  // 1 ter. Emprunter quelques deniers à un ami (à rembourser sur ses gages)
+  if (c.money < 5 && friendlyLoan(state, c)) {
+    setActivity(state, c, 'talk', c.locationId, 'Emprunte quelques deniers à un ami');
+    return;
+  }
   // 1 bis. Mendier les invendus d'un commerce en surplus (plutôt que de les laisser rassir)
   for (const b of allBusinesses(state)) {
     if (!b.ownerId || !b.sells.includes('bread') || !isOpen(b, hour)) continue;
@@ -205,7 +229,7 @@ function seekHelp(state: GameState, c: Character, hour: number): void {
     transferItem(state, P.b(b.id), P.c(c.id), 'bread', 1);
     modifyRelation(state, c.id, owner.id, 8, 6);
     logEvent(state, {
-      type: 'help', actorId: owner.id, targetId: c.id, businessId: b.id, locationId: b.locationId, importance: 2,
+      type: 'help', actorId: owner.id, targetId: c.id, businessId: b.id, locationId: b.locationId, importance: 1,
       text: `${fullName(owner)} donne une miche invendue de ${b.name} à ${fullName(c)}, qui n'a plus de quoi manger.`,
       witnesses: charactersAt(state, b.locationId).map(x => x.id),
     });
@@ -232,7 +256,7 @@ function giveHelpEvent(state: GameState, giver: Character, receiver: Character, 
   modifyRelation(state, receiver.id, giver.id, 10, 8);
   modifyRelation(state, giver.id, receiver.id, 2, 0);
   logEvent(state, {
-    type: 'help', actorId: giver.id, targetId: receiver.id, locationId: giver.locationId, importance: 2,
+    type: 'help', actorId: giver.id, targetId: receiver.id, locationId: giver.locationId, importance: 1,
     text: `${fullName(giver)} donne ${what} à ${fullName(receiver)}, affamé.`,
     witnesses: charactersAt(state, giver.locationId).map(x => x.id),
   });
@@ -279,6 +303,12 @@ function sellGoods(state: GameState, c: Character, b: Business, item: ItemId, pr
 
 function socialize(state: GameState, c: Character, tavern: Business, hour: number): void {
   let note = `Passe la soirée à ${tavern.name}`;
+  if (serveFestivalAle(state, c, tavern)) {
+    setActivity(state, c, 'socialize', tavern.locationId, `Trinque à la ${state.festival!.name.toLowerCase()}`, tavern.id);
+    return;
+  }
+  // Qui épargne pour s'établir se prive de bière
+  const saving = c.ambition.kind === 'ouvrir_commerce' && c.money < (c.ambition.target ?? 0) && c.needs.social > 30;
   // Les gens aisés dînent à l'auberge plutôt que de manger leur pain
   if (isOpen(tavern, hour) && c.money > 150 && c.needs.hunger > 25 && qty(tavern.stock, 'bread') > 0) {
     const mp = askPrice(state, tavern, 'bread');
@@ -287,7 +317,7 @@ function socialize(state: GameState, c: Character, tavern: Business, hour: numbe
   if (isOpen(tavern, hour) && qty(tavern.stock, 'ale') > 0) {
     const price = askPrice(state, tavern, 'ale');
     const foodReserve = askPrice(state, tavern, 'bread') * 2;
-    const thirsty = !hasTrait(c, 'avare') || chance(state, 0.3);
+    const thirsty = !saving && (!hasTrait(c, 'avare') || chance(state, 0.3));
     if (thirsty && c.money >= price + foodReserve && trade(state, P.c(c.id), P.b(tavern.id), 'ale', 1, price)) {
       addItem(c.inventory, 'ale', -1);
       addItem(state.ledger.consumed, 'ale', 1);

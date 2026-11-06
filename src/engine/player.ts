@@ -8,6 +8,9 @@ import { attemptTheft } from './crime';
 import { outputCap, P, priceForCharacter, trade, tradeRefusal, transferItem, transferMoney } from './economy';
 import { learnEvent, logEvent } from './events';
 import { fem, greeting, refusalText } from './narrative';
+import { activeLoans, businessInTrouble, createLoan, loanTerms, ownedBusinesses, repay } from './finance';
+import { acceptOrder, activeContract, deliverOrder, resign, signContract } from './contracts';
+import { festivalTonight, serveFestivalAle } from './society';
 import { eat as eatFood } from './npc';
 import { chance, rand, randInt } from './rng';
 import { advanceTime } from './sim';
@@ -61,6 +64,15 @@ export function canWork(state: GameState, b: Business, p: Character): WorkCheck 
   const maxHours = Math.max(0, Math.min(10 - p.hoursWorkedToday, hoursLeftOpen));
   const owner = b.ownerId ? state.characters[b.ownerId] : undefined;
   if (p.locationId !== b.locationId) return { ok: false, reason: "Tu n'es pas sur place.", wage, maxHours };
+  // Sous contrat : les heures sont garanties au salaire convenu
+  const k = activeContract(state, p.id);
+  if (k && k.businessId === b.id) {
+    if (!isOpen(b, d.hour)) return { ok: false, reason: `${b.name} est fermé (ouvert de ${b.openFrom}h à ${b.openTo}h).`, wage: k.wage, maxHours };
+    if (maxHours <= 0) return { ok: false, reason: p.hoursWorkedToday >= 10 ? "Tu as assez travaillé aujourd'hui." : 'La journée de travail touche à sa fin.', wage: k.wage, maxHours };
+    if (p.needs.energy < 15) return { ok: false, reason: 'Tu es trop épuisé pour travailler.', wage: k.wage, maxHours };
+    return { ok: true, wage: k.wage, maxHours };
+  }
+  if (b.ownerId === p.id) return { ok: false, reason: 'Ton intendant gère cette affaire ; la phase 3 te laissera la diriger toi-même.', wage, maxHours };
   if (!isOpen(b, d.hour)) return { ok: false, reason: `${b.name} est fermé (ouvert de ${b.openFrom}h à ${b.openTo}h).`, wage, maxHours };
   if (maxHours <= 0) return { ok: false, reason: p.hoursWorkedToday >= 10 ? "Tu as assez travaillé aujourd'hui." : 'La journée de travail touche à sa fin.', wage, maxHours };
   if (p.needs.energy < 15) return { ok: false, reason: 'Tu es trop épuisé pour travailler.', wage, maxHours };
@@ -301,7 +313,7 @@ export function talk(state: GameState, npcId: string, kind: TalkKind): ActionRes
   switch (kind) {
     case 'chat': {
       minutes = 20;
-      let delta = (p.attributes.charisme - 5) * 0.8 + p.skills.diplomatie / 20 + (rand(state) * 5 - 1.5);
+      let delta = (p.attributes.charisme - 5) * 0.8 + p.skills.diplomatie / 20 + (rand(state) * 5 - 1.5) + (festivalTonight(state) && state.locations[p.locationId].kind === 'tavern' ? 3 : 0);
       if (hasTrait(n, 'sociable')) delta += 2;
       if (hasTrait(n, 'timide')) delta -= 1;
       if (hasTrait(n, 'colerique') && chance(state, 0.2)) delta -= 4;
@@ -405,6 +417,96 @@ export function talk(state: GameState, npcId: string, kind: TalkKind): ActionRes
   p.activity = { kind: 'talk', locationId: p.locationId, targetId: n.id, since: state.time, note: `Parle avec ${n.firstName}` };
   finish(state, p, minutes);
   return ok(msg, minutes, events);
+}
+
+// ── Argent, contrats et commandes (phase 2) ─────────────────
+
+export function askLoan(state: GameState, npcId: string, amount: number): ActionResult {
+  const g = guard(state); if (g) return g;
+  const p = player(state);
+  const err = canTalk(state, npcId);
+  if (err) return no(err);
+  const n = state.characters[npcId];
+  const t = loanTerms(state, n, p, amount);
+  if (!t.ok) {
+    finish(state, p, 10);
+    return { ok: false, message: t.reason!, minutes: 10 };
+  }
+  const loan = createLoan(state, n, p, t, 'pour se lancer', charactersAt(state, p.locationId).map(c => c.id));
+  finish(state, p, 15);
+  return ok(`${n.firstName} te prête ${amount} d. Tu devras rendre ${t.totalDue} d en ${t.weeks} versements hebdomadaires de ${t.installment} d (${Math.round(t.weeklyRate * 100)} % par semaine). En cas de défaut, ${n.firstName} saisira tes biens.`, 15, loan ? [] : undefined);
+}
+
+/** Le joueur prête à un PNJ, à 5 % par semaine sur 4 semaines. Le PNJ n'accepte que s'il en a besoin. */
+export function lendMoney(state: GameState, npcId: string, amount: number): ActionResult {
+  const g = guard(state); if (g) return g;
+  const p = player(state);
+  const err = canTalk(state, npcId);
+  if (err) return no(err);
+  const n = state.characters[npcId];
+  if (p.money < amount) return no(`Il te faut ${amount} d.`);
+  const needs = n.money < 30 || ownedBusinesses(state, n).some(b => businessInTrouble(b));
+  if (!needs) return no(`${n.firstName} n'a pas besoin d'emprunter.`);
+  if (getRelation(state, n.id, p.id).affinity < -10) return no(fem(n, `${n.firstName} préfère ne rien te devoir.`));
+  if (activeLoans(state, { borrowerId: n.id, lenderId: p.id }).length) return no(`${n.firstName} te doit déjà de l'argent.`);
+  const weeks = 4, rate = 0.05, totalDue = Math.round(amount * (1 + rate * weeks));
+  const loan = createLoan(state, p, n, { ok: true, amount, weeklyRate: rate, weeks, totalDue, installment: Math.ceil(totalDue / weeks) }, 'pour joindre les deux bouts');
+  if (!loan) return no('Le prêt n’a pas pu être conclu.');
+  modifyRelation(state, n.id, p.id, 6, 4);
+  finish(state, p, 10);
+  return ok(`Tu prêtes ${amount} d à ${n.firstName}, qui te rendra ${totalDue} d en ${weeks} semaines. S'il ne paie pas, tu pourras saisir ses biens.`, 10);
+}
+
+export function repayLoan(state: GameState, loanId: string, amount?: number): ActionResult {
+  const g = guard(state); if (g) return g;
+  const p = player(state);
+  const loan = state.loans.find(l => l.id === loanId);
+  if (!loan || loan.status !== 'active' || loan.borrowerId !== p.id) return no('Aucune dette de ce nom.');
+  const paid = repay(state, loan, amount ?? loan.remaining);
+  if (!paid) return no("Tu n'as pas d'argent à rendre.");
+  const lender = state.characters[loan.lenderId];
+  finish(state, p, 5);
+  return ok((loan.status as string) === 'repaid' ? `Tu soldes ta dette envers ${lender.firstName}. Ta parole est tenue.` : `Tu verses ${paid} d à ${lender.firstName}. Reste dû : ${loan.remaining} d.`, 5);
+}
+
+/** Profiter de la fête de saison : chope offerte par l'intendance. */
+export function feastDrink(state: GameState): ActionResult {
+  const g = guard(state); if (g) return g;
+  const p = player(state);
+  const tavern = state.businesses['b_tavern'];
+  if (p.locationId !== tavern.locationId) return no('La fête a lieu à l’auberge.');
+  if (!festivalTonight(state)) return no("Il n'y a pas de fête ce soir.");
+  if (!serveFestivalAle(state, p, tavern)) return no('Les chopes offertes sont toutes servies.');
+  p.needs.hunger = clamp(p.needs.hunger - 4, 0, 100);
+  for (const c of charactersAt(state, p.locationId)) if (c.activity.kind === 'socialize') modifyRelation(state, c.id, p.id, 1, 0);
+  finish(state, p, 30);
+  return ok(`Tu trinques avec le village à la ${state.festival!.name.toLowerCase()}. Les convives présents te voient d'un œil plus amical.`, 30);
+}
+
+export function applyForJob(state: GameState, businessId: string): ActionResult {
+  const g = guard(state); if (g) return g;
+  const r = signContract(state, businessId);
+  if (r.ok) finish(state, player(state), 15);
+  return { ...r, minutes: r.ok ? 15 : 0 };
+}
+
+export function quitJob(state: GameState): ActionResult {
+  const g = guard(state); if (g) return g;
+  return resign(state);
+}
+
+export function takeOrder(state: GameState, orderId: string): ActionResult {
+  const g = guard(state); if (g) return g;
+  const r = acceptOrder(state, orderId);
+  if (r.ok) finish(state, player(state), r.minutes);
+  return r;
+}
+
+export function deliver(state: GameState, orderId: string): ActionResult {
+  const g = guard(state); if (g) return g;
+  const r = deliverOrder(state, orderId);
+  if (r.ok) finish(state, player(state), r.minutes);
+  return r;
 }
 
 // ── Crime ───────────────────────────────────────────────────

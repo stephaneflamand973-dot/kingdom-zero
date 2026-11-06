@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
-  canTalk, employerOf, fullName, getRelation, greeting, moodOf, ownedBusiness, PROFESSION_NAMES, qty, relationLabel,
-  talk, TRAIT_NAMES, type TalkKind,
+  activeLoans, ambitionLabel, askLoan, businessInTrouble, canTalk, employerOf, fullName, getRelation, greeting, lendMoney, loanTerms,
+  moodOf, ownedBusinesses, PROFESSION_NAMES, qty, relationLabel, talk, TRAIT_NAMES, type TalkKind,
 } from '../engine';
 import { Crest } from './icons';
 import type { Game } from './useGame';
@@ -35,7 +35,11 @@ export function NpcDialog({ game, npcId, onClose }: { game: Game; npcId: string;
   const r = getRelation(state, npcId, p.id);
   const err = canTalk(state, npcId);
   const job = employerOf(state, n);
-  const owned = ownedBusiness(state, n);
+  const owned = ownedBusinesses(state, n);
+  const iOwe = activeLoans(state, { borrowerId: p.id, lenderId: n.id }).reduce((s, l) => s + l.remaining, 0);
+  const theyOwe = activeLoans(state, { borrowerId: n.id, lenderId: p.id }).reduce((s, l) => s + l.remaining, 0);
+  const needsMoney = n.money < 30 || owned.some(b => businessInTrouble(b));
+  const run = (fn: Parameters<typeof act>[0]) => { const res = act(fn); setLast(res.message); };
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal dialog" onClick={e => e.stopPropagation()} role="dialog" aria-label={`Parler avec ${fullName(n)}`}>
@@ -44,7 +48,7 @@ export function NpcDialog({ game, npcId, onClose }: { game: Game; npcId: string;
           <Crest id={n.id} initials={n.firstName[0] + n.lastName[0]} size={58} />
           <div>
             <h2>{fullName(n)}</h2>
-            <div className="muted">{PROFESSION_NAMES[n.profession]}{owned ? ` · propriétaire de ${owned.name}` : job ? ` · ${job.name}` : ''} · {n.age} ans</div>
+            <div className="muted">{PROFESSION_NAMES[n.profession]}{owned.length ? ` · propriétaire de ${owned.map(b => b.name).join(', ')}` : job ? ` · ${job.name}` : ''} · {n.age} ans</div>
             <div className="traits">{n.traits.map(t => <span key={t} className="trait">{TRAIT_NAMES[t]}</span>)}<span className="trait mood">{moodOf(n)}</span></div>
           </div>
         </div>
@@ -53,21 +57,41 @@ export function NpcDialog({ game, npcId, onClose }: { game: Game; npcId: string;
           <div className="rel-title">Ce que {n.firstName} pense de toi : <strong>{relationLabel(r)}</strong></div>
           <Bar v={r.affinity} label="Affinité" />
           <Bar v={r.trust} label="Confiance" />
+          {(iOwe > 0 || theyOwe > 0) && <div className="debt-line">{iOwe > 0 && <span>Tu lui dois <b>{iOwe} d</b></span>}{theyOwe > 0 && <span>{n.firstName} te doit <b>{theyOwe} d</b></span>}</div>}
         </div>
-        <p className="muted small">Activité : {n.activity.note}</p>
+        <p className="muted small">Activité : {n.activity.note} · Ambition : {ambitionLabel(state, n)}</p>
         {last && <p className="dialog-result">{last}</p>}
         {err ? <p className="warn">{err}</p> : (
-          <div className="talk-grid">
-            {TALKS.map(t => {
-              const disabled = !!state.gameOver || (t.kind === 'gift_bread' && qty(p.inventory, 'bread') < 1) || (t.kind === 'gift_coins' && p.money < 10);
-              return (
-                <button key={t.kind} className={`btn ${t.kind === 'insult' ? 'danger' : ''}`} disabled={disabled}
-                  onClick={() => { const res = act(s => talk(s, npcId, t.kind)); setLast(res.message); }}>
-                  {t.label}<small>{t.hint}</small>
-                </button>
-              );
-            })}
-          </div>
+          <>
+            <div className="talk-grid">
+              {TALKS.map(t => {
+                const disabled = !!state.gameOver || (t.kind === 'gift_bread' && qty(p.inventory, 'bread') < 1) || (t.kind === 'gift_coins' && p.money < 10);
+                return (
+                  <button key={t.kind} className={`btn ${t.kind === 'insult' ? 'danger' : ''}`} disabled={disabled}
+                    onClick={() => run(s => talk(s, npcId, t.kind))}>
+                    {t.label}<small>{t.hint}</small>
+                  </button>
+                );
+              })}
+            </div>
+            <h3 className="dialog-sub">Argent</h3>
+            <div className="talk-grid">
+              {[20, 50, 100].map(amount => {
+                const t = loanTerms(state, n, p, amount);
+                return (
+                  <button key={amount} className="btn ghost" disabled={!!state.gameOver} onClick={() => run(s => askLoan(s, npcId, amount))}
+                    title={t.ok ? '' : t.reason}>
+                    Emprunter {amount} d
+                    <small>{t.ok ? `${t.totalDue} d en ${t.weeks} sem. (${Math.round(t.weeklyRate * 100)} %)` : 'refus probable'}</small>
+                  </button>
+                );
+              })}
+              <button className="btn ghost" disabled={!!state.gameOver || p.money < 20 || !needsMoney} onClick={() => run(s => lendMoney(s, npcId, 20))}
+                title={needsMoney ? '' : `${n.firstName} n'a pas besoin d'argent`}>
+                Prêter 20 d<small>{needsMoney ? '24 d rendus en 4 sem.' : 'pas dans le besoin'}</small>
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>
