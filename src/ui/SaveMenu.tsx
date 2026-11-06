@@ -8,6 +8,8 @@ const SLOT_NAME: Record<string, string> = { auto: 'Sauvegarde automatique', slot
 export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void }) {
   const { state, store, replace, newGame } = game;
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirmNew, setConfirmNew] = useState(false);
+  const [exported, setExported] = useState<string | null>(null);
   const [, force] = useState(0);
   const file = useRef<HTMLInputElement>(null);
 
@@ -24,12 +26,11 @@ export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void })
     onClose();
   };
   const doExport = () => {
-    const blob = new Blob([serialize(state)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `kingdom-zero-${formatDate(state.time).replace(/\s+/g, '-')}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const text = serialize(state);
+    navigator.clipboard?.writeText(text)
+      .then(() => { setExported(null); setMsg('Sauvegarde copiée dans le presse-papiers. Colle-la dans un fichier .json pour la conserver.'); })
+      .catch(() => { setExported(text); setMsg('Copie automatique impossible : sélectionne le texte ci-dessous et copie-le.'); });
+    if (!navigator.clipboard) { setExported(text); setMsg('Sélectionne le texte ci-dessous et copie-le.'); }
   };
   const doImport = async (f: File) => {
     const r = deserialize(await f.text());
@@ -59,11 +60,15 @@ export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void })
           })}
         </ul>
         <div className="save-row">
-          <button className="btn ghost" onClick={doExport}>Exporter (.json)</button>
-          <button className="btn ghost" onClick={() => file.current?.click()}>Importer…</button>
+          <button className="btn ghost" onClick={doExport}>Copier la sauvegarde</button>
+          <button className="btn ghost" onClick={() => file.current?.click()}>Importer un fichier…</button>
           <input ref={file} type="file" accept="application/json,.json" hidden onChange={e => e.target.files?.[0] && doImport(e.target.files[0])} />
-          <button className="btn danger" onClick={() => { if (confirm('Commencer une nouvelle vie ? La partie en cours non sauvegardée sera perdue.')) { newGame(); onClose(); } }}>Nouvelle partie</button>
+          {!confirmNew
+            ? <button className="btn danger" onClick={() => setConfirmNew(true)}>Nouvelle partie</button>
+            : <button className="btn danger" onClick={() => { newGame(); onClose(); }}>Confirmer : effacer la partie en cours</button>}
         </div>
+        {confirmNew && <p className="muted small">La partie en cours non sauvegardée sera perdue. <button className="link" onClick={() => setConfirmNew(false)}>Annuler</button></p>}
+        {exported && <textarea id="export-save" className="export-box" readOnly value={exported} onFocus={e => e.currentTarget.select()} />}
         {msg && <p className="dialog-result">{msg}</p>}
       </div>
     </div>
