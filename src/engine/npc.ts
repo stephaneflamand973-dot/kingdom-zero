@@ -1,0 +1,300 @@
+// ─────────────────────────────────────────────────────────────
+// IA comportementale des PNJ — architecture par scores d'utilité.
+// Chaque heure : 1) évaluer l'état, 2) satisfaire les besoins immédiats,
+// 3) noter les actions réalisables, 4) exécuter la meilleure,
+// 5) modifier l'état du PNJ et des entités touchées.
+// ─────────────────────────────────────────────────────────────
+import { ITEMS } from './data';
+import { attemptTheft } from './crime';
+import { askPrice, hireBest, isHiring, outputCap, P, priceForCharacter, sellersOf, trade, tradeRefusal, transferItem, transferMoney } from './economy';
+import { toDate } from './time';
+import { logEvent } from './events';
+import { chance } from './rng';
+import { getRelation, modifyRelation } from './social';
+import type { Activity, ActivityKind, Business, Character, GameState, ItemId } from './types';
+import { addItem, allBusinesses, charactersAt, clamp, employerOf, fullName, hasTrait, isOpen, qty } from './util';
+import { FOODS, RECIPES } from './data';
+
+export function maxWorkHours(c: Character): number {
+  if (c.profession === 'garde' || c.profession === 'intendant') return 6;
+  return hasTrait(c, 'travailleur') ? 10 : hasTrait(c, 'paresseux') ? 6 : 8;
+}
+
+function setActivity(state: GameState, c: Character, kind: ActivityKind, locationId: string, note: string, targetId?: string): void {
+  const prev = c.activity;
+  const same = prev.kind === kind && prev.locationId === locationId && prev.targetId === targetId;
+  c.activity = { kind, locationId, targetId, note, since: same ? prev.since : state.time } as Activity;
+  c.locationId = locationId;
+}
+
+/** Manger depuis son inventaire. Renvoie vrai si un repas a été pris. */
+export function eat(state: GameState, c: Character): boolean {
+  const food = FOODS.find(f => qty(c.inventory, f) > 0);
+  if (!food) return false;
+  addItem(c.inventory, food, -1);
+  addItem(state.ledger.consumed, food, 1);
+  c.needs.hunger = clamp(c.needs.hunger - (ITEMS[food].food ?? 30), 0, 100);
+  c.lastMealTime = state.time;
+  return true;
+}
+
+export function workLocation(state: GameState, c: Character, b: Business, hour: number): string {
+  if (c.profession === 'garde') {
+    const rounds = ['square', 'market', 'tavern', 'square'];
+    const kind = rounds[hour % rounds.length];
+    return state.locationOrder.find(id => state.locations[id].kind === kind) ?? b.locationId;
+  }
+  if (b.kind === 'manor' && c.profession === 'journalier') {
+    return state.locationOrder.find(id => state.locations[id].kind === 'square') ?? b.locationId; // travaux de voirie
+  }
+  return b.locationId;
+}
+
+interface Option { score: number; run: () => void }
+
+export function npcDecide(state: GameState, c: Character, hour: number, weekday: number): void {
+  if (!c.alive || c.isPlayer) return;
+  const n = c.needs;
+  const job = employerOf(state, c);
+  const sunday = weekday === 6;
+  const night = hour >= 22 || hour < 6;
+
+  // ── Besoin immédiat : manger si l'on a de quoi
+  if (n.hunger >= 40) eat(state, c);
+
+  const opts: Option[] = [];
+
+  // Dormir
+  {
+    let s = night ? 95 : 0;
+    if (n.energy < 15) s = Math.max(s, 85);
+    if (c.sick > 0 && !night) s = Math.max(s, 60);
+    if (s > 0) opts.push({ score: s, run: () => setActivity(state, c, 'sleep', c.homeId, c.sick > 0 ? 'Malade, il garde le lit' : 'Dort chez soi') });
+  }
+
+  // Travailler
+  if (job && !night && (!sunday || job.kind === 'tavern' || c.profession === 'garde')) {
+    const within = isOpen(job, hour) && hour < 21;
+    if (within && c.hoursWorkedToday < maxWorkHours(c) && n.energy > 12 && n.hunger < 92) {
+      let s = 70;
+      if (hasTrait(c, 'travailleur')) s += 10;
+      if (hasTrait(c, 'paresseux')) s -= 12;
+      if (c.unpaidWages > 0) s -= 15; // peu motivé si non payé
+      if (c.sick > 0) s -= 30;
+      const loc = workLocation(state, c, job, hour);
+      opts.push({ score: s, run: () => setActivity(state, c, 'work', loc, describeWork(state, c, job, loc), job.id) });
+    }
+  }
+
+  // S'approvisionner en nourriture
+  const bread = qty(c.inventory, 'bread') + qty(c.inventory, 'grain');
+  if (!night && (bread === 0 && n.hunger > 25 || bread < 2 && n.hunger > 10)) {
+    // pain de préférence ; à défaut, du grain pour la bouillie
+    const best = sellersOf(state, 'bread', hour, c)[0] ?? sellersOf(state, 'grain', hour, c)[0];
+    if (best && c.money >= best.price) {
+      const s = 28 + n.hunger * 0.6 + (bread === 0 ? 8 : 0);
+      opts.push({ score: s, run: () => buyFood(state, c, best.b, best.price, best.b.sells.includes('bread') && qty(best.b.stock, 'bread') > 0 ? 'bread' : 'grain') });
+    } else if (n.hunger > 55) {
+      opts.push({ score: 50 + n.hunger * 0.45, run: () => seekHelp(state, c, hour) });
+    }
+  }
+
+  // Bois de chauffe pour le foyer
+  const season = toDate(state.time).season;
+  if (!night && qty(c.inventory, 'wood') === 0 && n.hunger < 70) {
+    const ws = sellersOf(state, 'wood', hour, c)[0];
+    if (ws && c.money >= ws.price + 12) {
+      opts.push({ score: 36 + (season >= 2 ? 18 : 0), run: () => buyGoods(state, c, ws.b, 'wood', ws.price, season === 3 ? 3 : 2) });
+    }
+  }
+
+  // Vendre le surplus (bois ramassé, etc.)
+  if (!night && qty(c.inventory, 'wood') >= 4) {
+    const buyer = bestBuyer(state, c, 'wood', hour);
+    if (buyer) opts.push({ score: 58, run: () => sellGoods(state, c, buyer.b, 'wood', buyer.price, qty(c.inventory, 'wood') - 1) });
+  }
+
+  // Chercher du travail (plutôt le matin)
+  if (!job && !night && !sunday && hour >= 7 && hour < 17 && c.age < 70) {
+    const s = 50 + (hour < 10 ? 10 : 0) + (hasTrait(c, 'ambitieux') ? 10 : 0) - (hasTrait(c, 'paresseux') ? 15 : 0);
+    opts.push({ score: s, run: () => seekJob(state, c) });
+  }
+
+  // Ramasser du bois mort : le gagne-pain des démunis
+  if (!job && !night && hour >= 7 && hour < 18 && c.money < 60 && c.age < 72 && n.energy > 20) {
+    const s = 52 + (c.money < 15 ? 12 : 0) - (hasTrait(c, 'paresseux') ? 10 : 0);
+    const wood = state.locationOrder.find(id => state.locations[id].kind === 'woodlot')!;
+    opts.push({ score: s, run: () => setActivity(state, c, 'forage', wood, 'Ramasse du bois mort en lisière') });
+  }
+
+  // Sociabiliser à la taverne
+  const tavern = allBusinesses(state).find(b => b.kind === 'tavern');
+  if (tavern && hour >= 17 && hour < 23 && n.social < 85 && n.energy > 15) {
+    let s = 30 + (100 - n.social) * 0.45;
+    if (hasTrait(c, 'sociable')) s += 15;
+    if (hasTrait(c, 'timide')) s -= 15;
+    if (hour >= 22) s -= 20;
+    opts.push({ score: s, run: () => socialize(state, c, tavern, hour) });
+  }
+
+  // Par défaut : vaquer chez soi
+  opts.push({ score: 12, run: () => setActivity(state, c, 'idle', c.homeId, night ? 'Veille chez soi' : 'Vaque à ses occupations domestiques') });
+
+  opts.sort((a, b) => b.score - a.score);
+  opts[0].run();
+  state.stats.npcActions += 1;
+}
+
+function describeWork(state: GameState, c: Character, job: Business, loc: string): string {
+  if (c.profession === 'garde') return `Patrouille (${state.locations[loc].name})`;
+  if (job.kind === 'manor' && c.profession === 'journalier') return 'Entretient les chemins pour l’intendance';
+  if (job.kind === 'manor') return 'Tient les registres de l’intendance';
+  const r = RECIPES[job.kind];
+  if (!r) return `Tient l'étal de ${job.name}`;
+  const missing = (Object.keys(r.inputs) as (keyof typeof r.inputs)[]).find(it => qty(job.stock, it) < (r.inputs[it] ?? 0));
+  if (missing) return `Attend des ${ITEMS[missing].plural} à ${job.name}`;
+  return job.ownerId === c.id ? `Travaille dans son établissement (${job.name})` : `Travaille à ${job.name}`;
+}
+
+function buyFood(state: GameState, c: Character, b: Business, price: number, item: ItemId): void {
+  const want = hasTrait(c, 'avare') ? 2 : 3;
+  const n = Math.max(1, Math.min(want, Math.floor(c.money / price), qty(b.stock, item)));
+  if (trade(state, P.c(c.id), P.b(b.id), item, n, price)) {
+    setActivity(state, c, 'shop', b.locationId, item === 'bread'
+      ? `Achète ${n} pain${n > 1 ? 's' : ''} à ${b.name} (${price} d)`
+      : `Faute de pain, achète ${n} boisseau${n > 1 ? 'x' : ''} de grain pour la bouillie`, b.id);
+    if (c.needs.hunger >= 40) eat(state, c);
+  } else {
+    setActivity(state, c, 'idle', c.homeId, 'N’a pas pu acheter de pain');
+  }
+}
+
+function seekHelp(state: GameState, c: Character, hour: number): void {
+  // 1. Demander à l'ami le plus proche qui a de quoi donner
+  const friends = Object.entries(c.relations)
+    .filter(([id, r]) => r.affinity >= 10 && state.characters[id]?.alive && !state.characters[id].isPlayer)
+    .map(([id, r]) => ({ f: state.characters[id], r }))
+    .sort((a, b) => b.r.affinity - a.r.affinity || (a.f.id < b.f.id ? -1 : 1));
+  for (const { f } of friends) {
+    const their = getRelation(state, f.id, c.id);
+    const generous = hasTrait(f, 'genereux') ? 15 : hasTrait(f, 'avare') ? -25 : 0;
+    if (their.affinity + generous < 15) continue;
+    if (qty(f.inventory, 'bread') >= 2) {
+      transferItem(state, P.c(f.id), P.c(c.id), 'bread', 1);
+      giveHelpEvent(state, f, c, 'une miche de pain');
+      eat(state, c);
+      setActivity(state, c, 'talk', f.locationId, `Demande de l'aide à ${fullName(f)}`, f.id);
+      return;
+    }
+    if (f.money >= 40) {
+      const gift = 8;
+      transferMoney(state, P.c(f.id), P.c(c.id), gift);
+      giveHelpEvent(state, f, c, `${gift} deniers`);
+      setActivity(state, c, 'talk', f.locationId, `Demande de l'aide à ${fullName(f)}`, f.id);
+      return;
+    }
+  }
+  // 1 bis. Mendier les invendus d'un commerce en surplus (plutôt que de les laisser rassir)
+  for (const b of allBusinesses(state)) {
+    if (!b.ownerId || !b.sells.includes('bread') || !isOpen(b, hour)) continue;
+    const surplus = qty(b.stock, 'bread') - (b.targets.bread ?? 0) * 1.2;
+    const owner = state.characters[b.ownerId];
+    if (surplus < 1 || !owner.alive || hasTrait(owner, 'avare')) continue;
+    const r = getRelation(state, owner.id, c.id);
+    if (r.affinity < -20 + (hasTrait(owner, 'genereux') ? -25 : 0)) continue;
+    transferItem(state, P.b(b.id), P.c(c.id), 'bread', 1);
+    modifyRelation(state, c.id, owner.id, 8, 6);
+    logEvent(state, {
+      type: 'help', actorId: owner.id, targetId: c.id, businessId: b.id, locationId: b.locationId, importance: 2,
+      text: `${fullName(owner)} donne une miche invendue de ${b.name} à ${fullName(c)}, qui n'a plus de quoi manger.`,
+      witnesses: charactersAt(state, b.locationId).map(x => x.id),
+    });
+    eat(state, c);
+    setActivity(state, c, 'talk', b.locationId, `Mendie du pain à ${b.name}`, b.id);
+    return;
+  }
+  // 2. Le désespoir pousse les malhonnêtes (ou les affamés) au vol
+  const desperate = c.needs.hunger >= 90 || hasTrait(c, 'malhonnete');
+  if (desperate && !hasTrait(c, 'honnete') && chance(state, hasTrait(c, 'malhonnete') ? 0.6 : 0.25)) {
+    const target = allBusinesses(state).find(b => b.sells.includes('bread') && qty(b.stock, 'bread') > 0);
+    if (target) {
+      c.locationId = target.locationId;
+      const out = attemptTheft(state, c, target, 'bread', 1);
+      if ('success' in out && out.success) eat(state, c);
+      setActivity(state, c, 'shop', target.locationId, out && 'caught' in out && out.caught ? 'Pris la main dans le sac !' : 'Rôde autour des étals', target.id);
+      return;
+    }
+  }
+  setActivity(state, c, 'idle', c.homeId, hour < 20 ? 'Affamé et sans le sou' : 'Affamé, tente de dormir');
+}
+
+function giveHelpEvent(state: GameState, giver: Character, receiver: Character, what: string): void {
+  modifyRelation(state, receiver.id, giver.id, 10, 8);
+  modifyRelation(state, giver.id, receiver.id, 2, 0);
+  logEvent(state, {
+    type: 'help', actorId: giver.id, targetId: receiver.id, locationId: giver.locationId, importance: 2,
+    text: `${fullName(giver)} donne ${what} à ${fullName(receiver)}, affamé.`,
+    witnesses: charactersAt(state, giver.locationId).map(x => x.id),
+  });
+}
+
+function seekJob(state: GameState, c: Character): void {
+  const options = allBusinesses(state)
+    .filter(b => isHiring(state, b))
+    .filter(b => !b.ownerId || getRelation(state, b.ownerId, c.id).affinity > -25);
+  // rotation déterministe parmi les candidatures possibles
+  const b = options.length ? options[(c.hoursWorkedToday + state.processedHours) % options.length] : undefined;
+  if (!b) {
+    setActivity(state, c, 'seekJob', state.locationOrder[0], 'Cherche du travail, en vain');
+    return;
+  }
+  const hired = hireBest(state, b, [c]);
+  if (hired) b.lastStaffChangeDay = toDate(state.time).day;
+  setActivity(state, c, 'seekJob', b.locationId, hired ? `Vient d'être embauché à ${b.name}` : `Demande du travail à ${b.name}`, b.id);
+}
+
+function buyGoods(state: GameState, c: Character, b: Business, item: ItemId, price: number, want: number): void {
+  const n = Math.max(1, Math.min(want, Math.floor((c.money - 10) / price), qty(b.stock, item)));
+  if (n > 0 && trade(state, P.c(c.id), P.b(b.id), item, n, price)) {
+    setActivity(state, c, 'shop', b.locationId, `Achète ${n} ${n > 1 ? ITEMS[item].plural : ITEMS[item].name} à ${b.name}`, b.id);
+  } else setActivity(state, c, 'idle', c.homeId, 'Rentre bredouille');
+}
+
+export function bestBuyer(state: GameState, c: Character, item: ItemId, hour: number): { b: Business; price: number } | undefined {
+  return allBusinesses(state)
+    .filter(b => b.buys.includes(item) && isOpen(b, hour) && b.ownerId !== c.id && !tradeRefusal(state, b, c))
+    .filter(b => qty(b.stock, item) + 1 <= outputCap(b, item) && qty(b.stock, item) < (b.targets[item] ?? 0) * 2)
+    .map(b => ({ b, price: priceForCharacter(state, b, c, item, 'sell') }))
+    .filter(x => x.b.treasury >= x.price)
+    .sort((x, y) => y.price - x.price || (x.b.id < y.b.id ? -1 : 1))[0];
+}
+
+function sellGoods(state: GameState, c: Character, b: Business, item: ItemId, price: number, want: number): void {
+  const room = Math.min((b.targets[item] ?? 0) * 2 - qty(b.stock, item), Math.floor(b.treasury / price));
+  const n = Math.max(0, Math.min(want, room));
+  if (n > 0 && trade(state, P.b(b.id), P.c(c.id), item, n, price)) {
+    setActivity(state, c, 'shop', b.locationId, `Vend ${n} ${n > 1 ? ITEMS[item].plural : ITEMS[item].name} à ${b.name} (${price} d pièce)`, b.id);
+  } else setActivity(state, c, 'idle', c.homeId, 'Ne trouve pas d’acheteur');
+}
+
+function socialize(state: GameState, c: Character, tavern: Business, hour: number): void {
+  let note = `Passe la soirée à ${tavern.name}`;
+  // Les gens aisés dînent à l'auberge plutôt que de manger leur pain
+  if (isOpen(tavern, hour) && c.money > 150 && c.needs.hunger > 25 && qty(tavern.stock, 'bread') > 0) {
+    const mp = askPrice(state, tavern, 'bread');
+    if (trade(state, P.c(c.id), P.b(tavern.id), 'bread', 1, mp)) { eat(state, c); note = `Dîne à ${tavern.name}`; }
+  }
+  if (isOpen(tavern, hour) && qty(tavern.stock, 'ale') > 0) {
+    const price = askPrice(state, tavern, 'ale');
+    const foodReserve = askPrice(state, tavern, 'bread') * 2;
+    const thirsty = !hasTrait(c, 'avare') || chance(state, 0.3);
+    if (thirsty && c.money >= price + foodReserve && trade(state, P.c(c.id), P.b(tavern.id), 'ale', 1, price)) {
+      addItem(c.inventory, 'ale', -1);
+      addItem(state.ledger.consumed, 'ale', 1);
+      c.needs.social = clamp(c.needs.social + 15, 0, 100);
+      c.needs.hunger = clamp(c.needs.hunger - 4, 0, 100);
+      note = note.startsWith('Dîne') ? `Dîne et boit à ${tavern.name}` : `Boit une bière à ${tavern.name}`;
+    }
+  }
+  setActivity(state, c, 'socialize', tavern.locationId, note, tavern.id);
+}
