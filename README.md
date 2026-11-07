@@ -216,7 +216,7 @@ on touche la prime) et de dénoncer les crimes dont on a connaissance. L'onglet 
 recherche, les maisons, la grogne, les guerres, la guilde, et des bandes seulement ce que ton personnage en sait.
 
 Sur 224 jours simulés sans le joueur (6 graines) : 9 à 11 décès pour environ 52 habitants, 2 à 7
-embuscades, une trentaine de rackets, 1 à 8 emprisonnements, 1 à 5 successions ; un complot contre
+embuscades, une trentaine de rackets, 1 à 6 emprisonnements, 0 à 5 successions ; un complot contre
 Guérin Delaval (graine 7). Aucune guerre ni révolte n'éclate spontanément sur ces graines : la Maison de
 Roche, la plus belliqueuse, est aussi la plus pauvre. Les tests les déclenchent en forçant les conditions.
 
