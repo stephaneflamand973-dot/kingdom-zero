@@ -71,6 +71,8 @@ const MIGRATIONS: Record<number, (s: GameState) => GameState> = {
   },
   // v5 → v6 (phase 6) : aléas du monde
   5: s => { s.incidents ??= []; return s; },
+  // v6 → v7 : convois de grain physiques
+  6: s => { s.convoys ??= []; return s; },
 };
 
 export function deserialize(text: string): { state?: GameState; error?: string; savedAt?: string } {

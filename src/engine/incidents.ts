@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 import { ITEMS } from './data';
 import { askPrice, P, trade, transferMoney } from './economy';
+import { ownedBusinesses, transferBusiness } from './finance';
 import { logEvent } from './events';
 import { chance, pick, randInt } from './rng';
 import { toDate } from './time';
@@ -113,48 +114,101 @@ export function burn(state: GameState, sid: string, b: Business): number {
 }
 
 /**
- * Convoi de grain d'urgence : quand une localité n'a presque plus de vivres alors que des gens ont faim,
- * son marché (aidé au besoin par l'intendance) achète du grain dans la localité voisine la mieux pourvue.
- * L'argent et le grain changent réellement de mains ; le surcoût de transport est payé au vendeur.
+ * Commerce de grain (phase 6). Le marché d'une localité qui manque de vivres achète du grain à une localité
+ * voisine qui a un vrai surplus : chaque lundi pour s'approvisionner, et à tout moment (tous les cinq jours
+ * au plus) quand des gens ont faim — l'intendance avance alors l'argent si le marché n'a pas de quoi payer.
+ * Le grain est payé au départ, retiré du grenier vendeur et voyage physiquement sur la route : il n'arrive
+ * qu'au bout du trajet réel. Renvoie la quantité expédiée.
  */
-export function grainConvoy(state: GameState, sid: string): number {
-  const day = toDate(state.time).day;
+export function grainConvoy(state: GameState, sid: string, routine = false): number {
+  const d = toDate(state.time);
   const st = state.settlements[sid];
-  if (st.convoyDay !== undefined && day - st.convoyDay < 5) return 0;
   const pop = residents(state, sid);
+  if (!pop.length) return 0;
   const local = businessesIn(state, sid).reduce((a, b) => a + qty(b.stock, 'bread') + qty(b.stock, 'grain'), 0);
+  const inTransit = (state.convoys ?? []).filter(c => c.to === sid).reduce((a, c) => a + qty(c.cargo, 'grain'), 0);
   const hungry = pop.filter(c => c.needs.hunger > 50 && qty(c.inventory, 'bread') + qty(c.inventory, 'grain') === 0).length;
-  if (local >= pop.length * 3 || hungry < 2) return 0;
+  const urgent = !routine && hungry >= 2 && local + inTransit < pop.length * 3;
+  if (urgent && st.convoyDay !== undefined && d.day - st.convoyDay < 5) return 0;
+  if (!urgent && !(routine && local + inTransit < pop.length * 6)) return 0;
   const market = businessesIn(state, sid).find(b => b.kind === 'market');
   if (!market) return 0;
   const manor = state.businesses[st.manorId];
-  let need = pop.length * 4 - local;
-  let bought = 0;
+  let need = pop.length * (urgent ? 4 : 7) - local - inTransit;
+  if (need <= 0) return 0;
   // on n'achète qu'à une localité elle-même bien pourvue, et seulement son vrai surplus (pas ses réserves d'hiver)
   const wellFed = (o: string) => businessesIn(state, o).reduce((a, b) => a + qty(b.stock, 'bread') + qty(b.stock, 'grain'), 0) >= residents(state, o).length * 8;
-  const sources = state.settlementOrder.filter(o => o !== sid && roadPath(state, sid, o) && wellFed(o))
+  const sources = state.settlementOrder.filter(o => o !== sid && roadPath(state, o, sid) && wellFed(o))
     .flatMap(o => businessesIn(state, o).filter(b => (b.kind === 'farm' || b.kind === 'market') && b.sells.includes('grain')))
     .map(b => ({ b, spare: qty(b.stock, 'grain') - (b.targets.grain ?? 0) }))
     .filter(x => x.spare > 0)
     .sort((x, y) => y.spare - x.spare || (x.b.id < y.b.id ? -1 : 1));
-  const from: string[] = [];
+  let sent = 0;
   for (const { b, spare } of sources) {
     if (need <= 0) break;
     const price = askPrice(state, b, 'grain') + 2; // transport
     let n = Math.min(need, spare);
-    // l'intendance avance l'argent si le marché n'a pas de quoi payer
-    const lack = n * price - market.treasury;
-    if (lack > 0) transferMoney(state, P.b(manor.id), P.b(market.id), Math.min(lack, Math.max(0, manor.treasury - 40)));
-    n = Math.min(n, Math.floor(market.treasury / price));
+    if (urgent) {
+      // l'intendance avance l'argent si le marché n'a pas de quoi payer
+      const lack = n * price - market.treasury;
+      if (lack > 0) transferMoney(state, P.b(manor.id), P.b(market.id), Math.min(lack, Math.max(0, manor.treasury - 20)));
+      n = Math.min(n, Math.floor(market.treasury / price));
+    } else {
+      n = Math.min(n, Math.floor((market.treasury - 60) / price)); // un achat de routine garde une réserve
+    }
     if (n <= 0 || !trade(state, P.b(market.id), P.b(b.id), 'grain', n, price)) continue;
-    need -= n; bought += n;
-    from.push(state.settlements[settlementIdOf(state, b.locationId)].name);
-  }
-  if (bought > 0) {
-    st.convoyDay = day;
-    logEvent(state, { type: 'help', importance: 2, locationId: st.squareId, businessId: market.id,
-      text: `Un convoi d'urgence apporte ${bought} boisseaux de grain de ${[...new Set(from)].join(' et ')} au marché de ${st.name}, où ${hungry} personnes ont faim.`,
+    // le grain quitte l'étal du marché acheteur (où trade l'a déposé) pour voyager sur la route
+    addItem(market.stock, 'grain', -n);
+    const from = settlementIdOf(state, b.locationId);
+    const hours = roadPath(state, from, sid)!.hours;
+    state.convoys ??= [];
+    state.idSeq += 1;
+    state.convoys.push({ id: `cv${state.idSeq}`, from, to: sid, marketId: market.id, cargo: { grain: n }, departTime: state.time, arriveTime: state.time + hours * 60, urgent });
+    logEvent(state, { type: 'caravan', importance: urgent ? 2 : 1, locationId: st.squareId, businessId: market.id,
+      text: urgent
+        ? `Un convoi d'urgence de ${n} boisseaux de grain part de ${state.settlements[from].name} pour ${st.name}, où ${hungry} personnes ont faim (${hours} h de route).`
+        : `${market.name} fait venir ${n} boisseaux de grain de ${state.settlements[from].name} (${hours} h de route).`,
       witnesses: pop.map(c => c.id) });
+    need -= n; sent += n;
   }
-  return bought;
+  if (sent > 0 && urgent) st.convoyDay = d.day;
+  return sent;
+}
+
+/** Arrivée des convois : la cargaison rejoint l'étal du marché destinataire. */
+export function processConvoys(state: GameState): void {
+  if (!state.convoys?.length) return;
+  const arrived = state.convoys.filter(c => c.arriveTime <= state.time);
+  if (!arrived.length) return;
+  state.convoys = state.convoys.filter(c => c.arriveTime > state.time);
+  for (const c of arrived) {
+    const market = state.businesses[c.marketId];
+    const n = qty(c.cargo, 'grain');
+    // la cargaison est transférée telle quelle (aucun objet créé ni perdu)
+    for (const [k, v] of Object.entries(c.cargo)) addItem(market.stock, k as ItemId, v!);
+    c.cargo = {};
+    logEvent(state, { type: 'caravan', importance: c.urgent ? 2 : 1, locationId: market.locationId, businessId: market.id,
+      text: `Le convoi de ${state.settlements[c.from].name} arrive : ${n} boisseaux de grain garnissent ${market.name}.`,
+      witnesses: residents(state, c.to).map(x => x.id) });
+  }
+}
+
+/**
+ * Gérance (phase 6) : chaque lundi, l'intendance confie une affaire restée sans propriétaire au chômeur
+ * le plus capable de la localité. L'affaire garde sa caisse ; le gérant la dirige et peut embaucher.
+ */
+export function weeklyStewardship(state: GameState): void {
+  for (const id of state.businessOrder) {
+    const b = state.businesses[id];
+    if (b.ownerId || b.kind === 'manor') continue;
+    const sid = settlementIdOf(state, b.locationId);
+    const pick = residents(state, sid)
+      .filter(c => !c.employerId && !c.masterId && c.age >= 18 && c.age < 60 && c.profession !== 'seigneur' && c.profession !== 'soldat'
+        && (c.jailedUntil ?? 0) <= state.time && !ownedBusinesses(state, c).length)
+      .sort((a, x) => x.skills.gestion - a.skills.gestion || (a.id < x.id ? -1 : 1))[0];
+    if (!pick) continue;
+    transferBusiness(state, b, pick);
+    logEvent(state, { type: 'inheritance', actorId: pick.id, businessId: b.id, importance: 2, locationId: b.locationId,
+      text: `L'intendance de ${state.settlements[sid].name} confie ${b.name} en gérance à ${fullName(pick)}.`, witnesses: residents(state, sid).map(c => c.id) });
+  }
 }

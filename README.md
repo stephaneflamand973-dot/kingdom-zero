@@ -19,7 +19,8 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 95 tests automatisés (scénarios A–G, phases 2 à 6, invariants, fuzz) |
+| `npm test` | 100 tests automatisés (scénarios A–G, phases 2 à 6, invariants, fuzz) |
+| `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
 | `npm run demo` | partie scriptée de bout en bout, affichée dans le terminal |
@@ -65,7 +66,7 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
   family.ts        anniversaires, cour, mariage, naissances, enfance, succession, tutelle, domesticité,
                    lignée du joueur (phase 5) ; dons aux hospices (phase 6)
   incidents.ts     aléas : sécheresse, belle récolte, grand froid, épidémie, incendie, foire ;
-                   convoi de grain d'urgence (phase 6)
+                   commerce et convois de grain physiques, gérance des affaires sans maître (phase 6)
   approaches.ts    initiatives des PNJ envers le joueur (phase 6)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
   audio.ts         ambiance sonore procédurale (Web Audio, aucun fichier)
@@ -347,7 +348,39 @@ jauges exposées comme compteurs ; focus visible au clavier sur la carte et les 
 **Performances.** Environ 11 à 14 ms par jour simulé (≈ 50 habitants, mesuré sur une machine seule) ; une
 saison entière au pilote automatique se calcule en moins d'une demi-seconde.
 
-Format de sauvegarde v6 ; les sauvegardes v1 à v5 sont migrées automatiquement (testé).
+### Second passage : les limites levées
+
+Les cinq limites restantes de la phase 6 ont été traitées, chacune mesurée avant et après.
+
+- **Les convois voyagent vraiment.** Le grain est payé et retiré du grenier vendeur au départ, existe
+  physiquement pendant le trajet (compté dans le bilan des objets, visible sur la carte régionale : charrette
+  verte, rouge en cas d'urgence) et n'arrive qu'au bout des heures de route réelles. Le convoi devient aussi
+  un commerce régulier : chaque lundi, le marché d'une localité qui manque de vivres en fait venir d'une
+  localité qui en a un vrai surplus. Sur 16 ans : 5 à 53 convois arrivés selon le monde.
+- **Les morts de faim isolées.** En suivant les victimes heure par heure, trois vraies causes sont apparues :
+  des **prisonniers** nourris une seule fois par jour (et qui ne mangeaient pas le pain de leur besace) ;
+  la **mendicité** limitée au pain, alors que les greniers débordaient de grain ; des **affamés qui gardaient
+  leurs biens** (un homme est mort avec 130 fagots dans sa besace, en continuant d'en ramasser que personne
+  n'achetait). Désormais : trois rations par jour en prison, payées par l'intendance, la maison seigneuriale
+  ou le prisonnier, ou données par un grenier qui déborde ; on mendie aussi le grain ; un affamé sans le sou
+  brade ses biens au demi-prix ; on ne ramasse plus de bois que personne n'achète ; la soupe populaire ne
+  ferme plus dès que la caisse baisse ; un contrat prend fin à la mort du salarié (bogue trouvé par le fuzz).
+  Résultat : **0 à 6 morts de faim en 16 ans** selon le monde (contre des dizaines auparavant).
+- **Le chômage.** Les fermes aisées embauchent des **journaliers de moisson** l'été et l'automne (libérés à
+  l'hiver, sans rancune) ; une caisse qui déborde sans pouvoir embaucher verse un **dividende** (qui finance
+  domestiques et dons aux hospices) ; l'intendance confie toute affaire restée sans maître **en gérance** au
+  chômeur le plus capable ; l'intendance embauche des journaliers dès 260 d en caisse. Chômage moyen sur
+  16 ans : **14 à 25 %** selon le monde (≈ 19 % en moyenne), contre 30 à 45 % mesurés aux phases précédentes.
+  Les chemins se maintiennent entre 40 et 61 : sous 40, les travailleurs donnent aussi un peu de leur temps.
+- **Le débutant au pilote automatique.** Sans place, il fait chaque matin une journée chez le patron qui lui
+  fait le plus confiance, puis signe un contrat dès que la confiance est acquise. Sur 12 mondes : 12 survies
+  sur une année, 12 contrats signés, et **250 à 1 300 d** d'épargne au bout d'un an (contre 0 à 65 d).
+- **Le son est vérifié pour de vrai.** Un analyseur mesure le signal qui sort vers les haut-parleurs ; le
+  script `scripts/check-sound.cjs` ouvre le jeu dans Chromium avec la règle réelle des navigateurs et
+  constate : silence avant tout geste, ambiance audible (niveau ≈ 0,004), bruitage d'action (≈ 0,006),
+  silence une fois coupé (≈ 0,00001), retour une fois rétabli.
+
+Format de sauvegarde v7 ; les sauvegardes v1 à v6 sont migrées automatiquement (testé).
 
 ## État réel du développement
 
@@ -390,15 +423,14 @@ héritage du joueur ; combat au tour par tour ; intégration optionnelle d’un 
 les dialogues (le moteur restera l’autorité sur les faits).
 
 ### Limites connues
-- L’argent tend encore à se concentrer chez les épargnants ; domesticité et dons aux hospices le font
-  recirculer, sans investissement à proprement parler. Les salaires glissent vers le plancher.
-- Le convoi de grain d'urgence arrive le jour même (il ne voyage pas physiquement sur la route) et les vivres
-  de disette sont comptés comme du grain.
-- Le son est volontairement simple (synthèse) et n'est vérifié automatiquement que par l'absence d'erreur ;
-  son rendu dépend du navigateur.
-- Un débutant au pilote automatique survit, mais reste pauvre et souvent sans emploi stable : progresser
-  demande de jouer.
-- Le chômage est structurel (environ 30 à 45 %) : l’économie fermée ne crée pas assez de demande pour tous.
+- L’argent tend encore à se concentrer chez les épargnants ; dividendes, domesticité et dons aux hospices le
+  font recirculer, sans investissement à proprement parler. Les salaires glissent vers le plancher.
+- Les vivres de disette (racines, baies) sont comptés comme du grain ; les convois de grain ne peuvent pas
+  être attaqués par les brigands.
+- Le son est volontairement simple (synthèse) ; la vérification mesure qu'un signal est produit, pas sa
+  qualité à l'oreille.
+- Le chômage est réduit mais pas supprimé (≈ 19 % en moyenne) : l'économie fermée d'une cinquantaine
+  d'habitants ne crée pas assez de demande pour tous, surtout dans le village agricole.
 - Beaucoup de démissions viennent de salaires impayés : les petites entreprises vivent au jour le jour.
 - Le trésor du village est souvent trop maigre pour offrir la bière des fêtes.
 - Le commerce régional reste modeste : l'écart entre prix d'achat et prix de vente des établissements
@@ -409,5 +441,5 @@ les dialogues (le moteur restera l’autorité sur les faits).
   réunissent peu souvent en deux ans simulés.
 - Le joueur ne peut pas encore lever ses propres troupes, rejoindre la bande ni prendre part à une bataille.
 - Pas d'armes ni d'armures : la force d'un combattant ne dépend que de lui.
-- Des disettes locales restent possibles (morts de faim isolées, surtout l'hiver) ; la cueillette, la soupe
-  populaire, les convois et l'aide seigneuriale empêchent désormais l'effondrement sur les 16 ans mesurés.
+- De rares morts de faim restent possibles (0 à 6 en 16 ans selon le monde), le plus souvent un nourrisson
+  de parents ruinés ou un adulte sans le sou, l'hiver.

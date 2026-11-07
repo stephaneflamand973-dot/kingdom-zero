@@ -14,6 +14,7 @@ type Ctx = AudioContext;
 class SoundEngine {
   private ctx: Ctx | null = null;
   private master: GainNode | null = null;
+  private analyser: AnalyserNode | null = null;
   private wind: { src: AudioBufferSourceNode; filter: BiquadFilterNode; gain: GainNode } | null = null;
   private murmur: { src: AudioBufferSourceNode; filter: BiquadFilterNode; gain: GainNode } | null = null;
   private scene: Scene | null = null;
@@ -28,7 +29,11 @@ class SoundEngine {
       try { this.ctx = new AC(); } catch { return; }
       this.master = this.ctx.createGain();
       this.master.gain.value = 0;
-      this.master.connect(this.ctx.destination);
+      // un analyseur sur la sortie permet de vérifier qu'un son est réellement produit (tests, indicateur)
+      this.analyser = this.ctx.createAnalyser();
+      this.analyser.fftSize = 2048;
+      this.master.connect(this.analyser);
+      this.analyser.connect(this.ctx.destination);
       this.noise = this.makeNoise();
       this.wind = this.loop(this.noise, 'lowpass', 420);
       this.murmur = this.loop(this.noise, 'bandpass', 520);
@@ -39,6 +44,16 @@ class SoundEngine {
   }
 
   get ready(): boolean { return !!this.ctx && this.ctx.state === 'running'; }
+
+  /** Niveau efficace (RMS) du signal qui sort réellement vers les haut-parleurs, 0 si silence. */
+  level(): number {
+    if (!this.analyser) return 0;
+    const buf = new Float32Array(this.analyser.fftSize);
+    this.analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) sum += v * v;
+    return Math.sqrt(sum / buf.length);
+  }
 
   private makeNoise(): AudioBuffer {
     const ctx = this.ctx!;
@@ -132,3 +147,5 @@ class SoundEngine {
 }
 
 export const sound = new SoundEngine();
+// accès de diagnostic (vérification automatique du son dans un vrai navigateur)
+if (typeof window !== 'undefined') (window as unknown as { kingdomZeroSound?: SoundEngine }).kingdomZeroSound = sound;

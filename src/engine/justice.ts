@@ -3,7 +3,7 @@
 // Les autorités n'agissent que sur ce qu'elles savent : un crime sans témoin reste impuni.
 // ─────────────────────────────────────────────────────────────
 import { applyWounds, autoBattle, fighterOf, strength } from './combat';
-import { askPrice, P, trade, transferMoney } from './economy';
+import { askPrice, P, trade, transferItem, transferMoney } from './economy';
 import { logEvent } from './events';
 import { eat } from './npc';
 import { houseOf, isJailed, isLawman } from './orgs';
@@ -102,11 +102,27 @@ export function feedPrisoners(state: GameState): void {
   for (const c of aliveCharacters(state)) {
     if (!isJailed(state, c) || c.needs.hunger < 50) continue;
     const sid = state.locations[c.locationId]?.kind === 'road' ? settlementIdOf(state, c.homeId) : settlementIdOf(state, c.locationId);
+    // phase 6 : le prisonnier mange d'abord ce qu'il a sur lui
+    if (qty(c.inventory, 'bread') + qty(c.inventory, 'grain') > 0) { eat(state, c); continue; }
     const manor = manorOf(state, sid);
-    const baker = businessesIn(state, sid).find(b => b.sells.includes('bread') && b.kind !== 'manor' && qty(b.stock, 'bread') > 0);
-    if (!baker) continue;
-    const price = askPrice(state, baker, 'bread');
-    if (manor.treasury >= price && transferMoney(state, P.b(manor.id), P.c(c.id), price) && trade(state, P.c(c.id), P.b(baker.id), 'bread', 1, price)) eat(state, c);
+    // pain, ou à défaut grain pour la bouillie (le moins cher des deux)
+    const offers = (['bread', 'grain'] as const).flatMap(item => businessesIn(state, sid)
+      .filter(b => b.sells.includes(item) && b.kind !== 'manor' && qty(b.stock, item) > 0)
+      .map(b => ({ b, item, price: askPrice(state, b, item) })))
+      .sort((x, y) => x.price - y.price || (x.b.id < y.b.id ? -1 : 1));
+    const o = offers[0];
+    if (!o) continue;
+    // la ration est payée par l'intendance, sinon par la maison seigneuriale, sinon par le prisonnier
+    const house = state.orgs[state.settlements[sid]?.lordHouseId ?? ''];
+    const payer = manor.treasury >= o.price ? P.b(manor.id) : house && house.treasury >= o.price ? P.o(house.id) : c.money >= o.price ? P.c(c.id) : undefined;
+    if (payer) {
+      if (payer.t !== 'c') transferMoney(state, payer, P.c(c.id), o.price);
+      if (trade(state, P.c(c.id), P.b(o.b.id), o.item, 1, o.price)) eat(state, c);
+      continue;
+    }
+    // personne ne peut payer : un grenier qui déborde donne la ration (charité)
+    const giver = offers.find(x => qty(x.b.stock, x.item) > (x.b.targets[x.item] ?? 0) * 1.2);
+    if (giver && transferItem(state, P.b(giver.b.id), P.c(c.id), giver.item, 1)) eat(state, c);
   }
 }
 

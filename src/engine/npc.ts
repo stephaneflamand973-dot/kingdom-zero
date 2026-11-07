@@ -4,7 +4,7 @@
 // 3) noter les actions réalisables, 4) exécuter la meilleure,
 // 5) modifier l'état du PNJ et des entités touchées.
 // ─────────────────────────────────────────────────────────────
-import { ITEMS } from './data';
+import { ITEM_IDS, ITEMS } from './data';
 import { attemptTheft } from './crime';
 import { askPrice, hireBest, isHiring, outputCap, P, priceForCharacter, sellersOf, trade, tradeRefusal, transferItem, transferMoney } from './economy';
 import { toDate } from './time';
@@ -160,7 +160,9 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
   }
 
   // Ramasser du bois mort : le gagne-pain des démunis
-  if (!job && !night && hour >= 7 && hour < 18 && c.money < 60 && c.age < 72 && n.energy > 20 && c.profession !== 'seigneur' && c.profession !== 'soldat') {
+  // (phase 6 : inutile d'entasser des fagots que personne n'achète ; on garde de quoi se chauffer)
+  if (!job && !night && hour >= 7 && hour < 18 && c.money < 60 && c.age < 72 && n.energy > 20 && c.profession !== 'seigneur' && c.profession !== 'soldat'
+    && (qty(c.inventory, 'wood') < 10 || !!bestBuyer(state, c, 'wood', hour))) {
     const s = 52 + (c.money < 15 ? 12 : 0) - (hasTrait(c, 'paresseux') ? 10 : 0);
     const wood = locationsIn(state, home.id, 'woodlot')[0]?.id ?? home.squareId;
     opts.push({ score: s, run: () => setActivity(state, c, 'forage', wood, 'Ramasse du bois mort en lisière') });
@@ -235,7 +237,28 @@ function gatherFood(state: GameState, c: Character, hour: number): boolean {
   return true;
 }
 
+/** Phase 6 — vente de détresse : un affamé sans le sou brade ses biens (au demi-prix) à qui en achète. */
+function distressSale(state: GameState, c: Character, hour: number): boolean {
+  for (const item of ITEM_IDS) {
+    if (item === 'bread' || item === 'grain' || qty(c.inventory, item) < 1) continue;
+    const keep = item === 'wood' ? 3 : 0;
+    const offers = businessesIn(state, hereSettlement(state, c).id)
+      .filter(b => b.buys.includes(item) && isOpen(b, hour) && b.ownerId !== c.id && !tradeRefusal(state, b, c) && qty(b.stock, item) < (b.targets[item] ?? 0) * 4)
+      .map(b => ({ b, price: Math.max(1, Math.floor(priceForCharacter(state, b, c, item, 'sell') * 0.5)) }))
+      .filter(x => x.b.treasury >= x.price)
+      .sort((x, y) => y.price - x.price || (x.b.id < y.b.id ? -1 : 1));
+    const o = offers[0];
+    const n = o ? Math.min(qty(c.inventory, item) - keep, 4, Math.floor(o.b.treasury / o.price)) : 0;
+    if (!o || n <= 0 || !trade(state, P.b(o.b.id), P.c(c.id), item, n, o.price)) continue;
+    setActivity(state, c, 'shop', o.b.locationId, `Brade ${n} ${n > 1 ? ITEMS[item].plural : ITEMS[item].name} à ${o.b.name} pour manger (${o.price} d pièce)`, o.b.id);
+    return true;
+  }
+  return false;
+}
+
 function seekHelp(state: GameState, c: Character, hour: number): void {
+  // 00. Brader ce qu'on a avant de mendier
+  if (c.money < 5 && distressSale(state, c, hour)) return;
   // 0. Plus rien à vendre dans la localité : on part chercher sa pitance en forêt
   const forSale = sellersOf(state, 'bread', hour, c, true).length + sellersOf(state, 'grain', hour, c, true).length;
   if (forSale === 0 && gatherFood(state, c, hour)) return;
@@ -269,22 +292,29 @@ function seekHelp(state: GameState, c: Character, hour: number): void {
     return;
   }
   // 1 bis. Mendier les invendus d'un commerce en surplus (plutôt que de les laisser rassir)
-  for (const b of businessesIn(state, homeSettlement(state, c).id)) {
-    if (!b.ownerId || !b.sells.includes('bread') || !isOpen(b, hour)) continue;
-    const surplus = qty(b.stock, 'bread') - (b.targets.bread ?? 0) * 1.2;
-    const owner = state.characters[b.ownerId];
-    if (surplus < 1 || !owner.alive || hasTrait(owner, 'avare')) continue;
-    const r = getRelation(state, owner.id, c.id);
-    if (r.affinity < -20 + (hasTrait(owner, 'genereux') ? -25 : 0)) continue;
-    transferItem(state, P.b(b.id), P.c(c.id), 'bread', 1);
-    modifyRelation(state, c.id, owner.id, 8, 6);
+  //     (phase 6 : aussi le grain des greniers qui débordent, et les affaires tenues par l'intendance)
+  for (const item of ['bread', 'grain'] as const) for (const b of businessesIn(state, homeSettlement(state, c).id)) {
+    if (b.kind === 'manor' || !b.sells.includes(item) || !isOpen(b, hour)) continue;
+    const surplus = qty(b.stock, item) - (b.targets[item] ?? 0) * (item === 'bread' ? 1.2 : 1.5);
+    const owner = b.ownerId ? state.characters[b.ownerId] : undefined;
+    if (surplus < 1 || (owner && (!owner.alive || (hasTrait(owner, 'avare') && c.needs.hunger < 85)))) continue;
+    if (owner) {
+      const r = getRelation(state, owner.id, c.id);
+      if (r.affinity < -20 + (hasTrait(owner, 'genereux') ? -25 : 0)) continue;
+    }
+    const n = item === 'grain' ? Math.min(2, Math.floor(surplus)) : 1;
+    transferItem(state, P.b(b.id), P.c(c.id), item, n);
+    if (owner) modifyRelation(state, c.id, owner.id, 8, 6);
+    const giver = owner ? fullName(owner) : `L'intendance (${b.name})`;
     logEvent(state, {
-      type: 'help', actorId: owner.id, targetId: c.id, businessId: b.id, locationId: b.locationId, importance: 1,
-      text: `${fullName(owner)} donne une miche invendue de ${b.name} à ${fullName(c)}, qui n'a plus de quoi manger.`,
+      type: 'help', actorId: owner?.id, targetId: c.id, businessId: b.id, locationId: b.locationId, importance: 1,
+      text: item === 'bread'
+        ? `${giver} donne une miche invendue de ${b.name} à ${fullName(c)}, qui n'a plus de quoi manger.`
+        : `${giver} donne ${n} boisseau${n > 1 ? 'x' : ''} de grain du grenier de ${b.name} à ${fullName(c)}, qui n'a plus de quoi manger.`,
       witnesses: charactersAt(state, b.locationId).map(x => x.id),
     });
     eat(state, c);
-    setActivity(state, c, 'talk', b.locationId, `Mendie du pain à ${b.name}`, b.id);
+    setActivity(state, c, 'talk', b.locationId, item === 'bread' ? `Mendie du pain à ${b.name}` : `Mendie du grain à ${b.name}`, b.id);
     return;
   }
   // 2. Le désespoir pousse les malhonnêtes (ou les affamés) au vol

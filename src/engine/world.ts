@@ -7,7 +7,7 @@ import { modifyRelation } from './social';
 import { initialAmbition } from './society';
 import { birthDayFor, seedFamilies } from './family';
 
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 const LOCATIONS: Omit<Location, 'settlementId'>[] = [
   { id: 'square', name: 'Place du Puits', kind: 'square', x: 500, y: 330, description: 'Le cœur de Valcendre : un vieux puits, des bancs de pierre, les nouvelles qui circulent.' },
@@ -74,7 +74,7 @@ export function emptyState(seed: number): GameState {
     version: SAVE_VERSION, seed, rng: seed | 0, time: 0, processedHours: absoluteHour(0),
     locations: {}, locationOrder: [], characters: {}, characterOrder: [], businesses: {}, businessOrder: [],
     events: [], eventSeq: 0, idSeq: 100, playerId: 'player',
-    settlements: {}, settlementOrder: [], roads: [], caravans: [], properties: [], priceBook: {}, festivals: [], tradeMemory: {}, incidents: [],
+    settlements: {}, settlementOrder: [], roads: [], caravans: [], properties: [], priceBook: {}, festivals: [], tradeMemory: {}, incidents: [], convoys: [],
     orgs: {}, orgOrder: [], wars: [], wanted: [],
     dynasty: { name: 'de Nulle-Part', generation: 1, heads: [{ id: 'player', from: 0 }] },
     ledger: { produced: {}, consumed: {}, externalMoneyIn: 0, externalMoneyOut: 0, externalItemsIn: {}, removedItems: {} },

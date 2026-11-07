@@ -10,15 +10,16 @@ import { ambushRisk, freeMembers, gangsOnRoad } from './gangs';
 import { addWanted, arrestNpc, jail, payBounty, wantedFor } from './justice';
 import { activeWar } from './nobility';
 import { houseOf, joinOrg, orgList, orgsOf } from './orgs';
-import { finish, guard } from './player';
+import { canWork, dayWageOffer, finish, guard, work } from './player';
 import { chance, rand } from './rng';
 import { advanceTime, killCharacter, recordPrices } from './sim';
 import { compatibility, getRelation, modifyRelation } from './social';
 import { kin, wed } from './family';
 import { MIN_PER_DAY, formatDuration } from './time';
 import type { ActionResult, Character, GameState, Organization } from './types';
-import { activeContract } from './contracts';
-import { charactersAt, clamp, fullName, player, qty, roadPath, settlementIdOf } from './util';
+import { activeContract, jobOffer, signContract } from './contracts';
+import { businessesIn, charactersAt, clamp, fullName, hereSettlement, player, qty, roadPath, settlementIdOf } from './util';
+import { toDate } from './time';
 
 const ok = (message: string, minutes: number): ActionResult => ({ ok: true, message, minutes });
 const no = (message: string): ActionResult => ({ ok: false, message, minutes: 0 });
@@ -441,14 +442,63 @@ export function proposeMarriage(state: GameState, npcId: string): ActionResult {
   return ok(`${n.firstName} accepte ! Les noces sont célébrées. Vous partagez désormais un foyer${p.homeId === n.homeId ? ` (${state.locations[p.homeId].name})` : ''}.`, 120);
 }
 
+/** Cherche la meilleure place sous contrat dans la localité et la signe (pilote automatique). */
+export function autoFindWork(state: GameState, p: Character): boolean {
+  if (activeContract(state, p.id) || state.locations[p.locationId]?.kind === 'road') return false;
+  const best = businessesIn(state, hereSettlement(state, p).id)
+    .map(b => ({ b, o: jobOffer(state, b, p) }))
+    .filter(x => x.o.ok)
+    .sort((x, y) => y.o.wage - x.o.wage || (x.b.id < y.b.id ? -1 : 1))[0];
+  if (!best) return false;
+  const from = p.locationId;
+  p.locationId = best.b.locationId; // on se présente sur place
+  const r = signContract(state, best.b.id);
+  if (!r.ok) p.locationId = from;
+  return r.ok;
+}
+
+/** Une journée de travail payée à l'heure, chez le patron qui fait le plus confiance au joueur. */
+export function autoDayLabour(state: GameState, p: Character, hours: number): boolean {
+  if (hours < 2 || state.locations[p.locationId]?.kind === 'road') return false;
+  const options = businessesIn(state, hereSettlement(state, p).id)
+    .filter(b => b.kind !== 'market')
+    .map(b => {
+      const from = p.locationId;
+      p.locationId = b.locationId;
+      const ok = canWork(state, b, p).ok;
+      p.locationId = from;
+      const trust = b.ownerId ? getRelation(state, b.ownerId, p.id).trust : 0;
+      return { b, ok, score: trust + dayWageOffer(state, b, p) * 2 };
+    })
+    .filter(x => x.ok)
+    .sort((x, y) => y.score - x.score || (x.b.id < y.b.id ? -1 : 1));
+  const best = options[0];
+  if (!best) return false;
+  const from = p.locationId;
+  p.locationId = best.b.locationId;
+  const r = work(state, best.b.id, hours);
+  if (!r.ok) p.locationId = from;
+  return r.ok;
+}
+
 /** Vivre au jour le jour : l'IA conduit le joueur ; s'interrompt en cas de rencontre, de mort ou de fin. */
 export function liveDays(state: GameState, days: number): ActionResult {
   const g = guard(state); if (g) return g;
   const p = player(state);
   const money0 = p.money, t0 = state.time, seq0 = state.eventSeq;
   state.autopilotUntil = state.time + days * MIN_PER_DAY;
-  for (let i = 0; i < days * 24; i++) {
-    advanceTime(state, 60);
+  const end = state.autopilotUntil;
+  while (state.time < end) {
+    // phase 6 : sans place, le pilote automatique se présente chaque matin là où l'on embauche,
+    // et sinon fait une journée chez le patron qui le connaît le mieux (c'est ainsi qu'on gagne sa confiance)
+    const hour = toDate(state.time).hour;
+    if (hour === 7 && !p.employerId && p.alive && !state.encounter && p.needs.energy > 30 && p.needs.hunger < 70 && !autoFindWork(state, p)) {
+      if (autoDayLabour(state, p, Math.min(8, Math.floor((end - state.time) / 60)))) {
+        if (state.encounter || state.gameOver || state.pendingSuccession) break;
+        continue;
+      }
+    }
+    advanceTime(state, Math.min(60, end - state.time));
     if (state.encounter || state.gameOver || state.pendingSuccession) break;
   }
   state.autopilotUntil = undefined;

@@ -4,7 +4,7 @@ import {
   activeIncidents, advanceTime, allBusinesses, askPrice, buy, burn, canWork, checkIntegrity, checksum, continueAs, createLoan, loanTerms,
   createWorld, dailyIncidents, deserialize, eat, encounterAction, epidemicFactor, forage, incidentYield, itemBalance, liveDays,
   MIN_PER_DAY, moneyBalance, moveTo, npcApproaches, qty, SAVE_VERSION, serialize, sleep, sleepOptions, talk, totalItems,
-  logEvent, totalMoney, train, wait, work, transferMoney, transferBusiness, hireBest, P, settleEstate, minutesUntilHour, grainConvoy, businessesIn, residents, type EncounterChoice, type GameState, type TalkKind,
+  feedPrisoners, weeklyStewardship, manageBusiness, logEvent, totalMoney, train, wait, work, transferMoney, transferBusiness, hireBest, P, settleEstate, minutesUntilHour, grainConvoy, businessesIn, residents, type EncounterChoice, type GameState, type TalkKind,
 } from '../src/engine';
 import { mulberry } from './util';
 
@@ -185,19 +185,20 @@ describe('Équilibrage', () => {
   }, 60000);
 });
 
-describe('Sauvegarde v6', () => {
-  it('une sauvegarde v5 est migrée (aléas initialisés) et reste intègre', () => {
+describe('Sauvegarde v6 → v7', () => {
+  it('une sauvegarde v5 est migrée (aléas et convois initialisés) et reste intègre', () => {
     const s = createWorld(620);
     advanceTime(s, 2 * MIN_PER_DAY);
     const v5 = JSON.parse(JSON.stringify(s));
-    delete v5.incidents; delete v5.lastApproach;
+    delete v5.incidents; delete v5.lastApproach; delete v5.convoys;
     v5.version = 5;
     const body = JSON.stringify(v5);
     const r = deserialize(JSON.stringify({ format: 'KINGDOM_ZERO_SAVE', version: 5, savedAt: 'x', checksum: checksum(body), state: v5 }));
     expect(r.error).toBeUndefined();
     expect(r.state!.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(6);
+    expect(SAVE_VERSION).toBe(7);
     expect(Array.isArray(r.state!.incidents)).toBe(true);
+    expect(Array.isArray(r.state!.convoys)).toBe(true);
   });
 });
 
@@ -258,7 +259,7 @@ describe('Équilibrage économique (phase 6)', () => {
     expect((s.ledger.produced.grain ?? 0)).toBeGreaterThan(prod0);
   });
 
-  it('le convoi d’urgence n’achète qu’à une localité bien pourvue, argent et grain changent de mains', () => {
+  it('le convoi de grain voyage réellement : payé au départ, arrivé au bout du trajet, rien de créé', () => {
     const s = createWorld(643);
     s.observer = true;
     for (const b of businessesIn(s, 'hautepierre')) { delete b.stock.bread; delete b.stock.grain; }
@@ -269,11 +270,17 @@ describe('Équilibrage économique (phase 6)', () => {
     const n = grainConvoy(s, 'hautepierre');
     expect(n).toBeGreaterThan(0);
     const market = businessesIn(s, 'hautepierre').find(b => b.kind === 'market')!;
-    expect(qty(market.stock, 'grain')).toBe(n);
+    expect(qty(market.stock, 'grain')).toBe(0);            // pas encore arrivé
+    expect(s.convoys!.length).toBeGreaterThan(0);
     expect(totalMoney(s)).toBe(m0);
-    expect(totalItems(s)).toEqual(i0);
-    // pas deux convois coup sur coup
-    expect(grainConvoy(s, 'hautepierre')).toBe(0);
+    expect(totalItems(s)).toEqual(i0);                      // la cargaison existe pendant le trajet
+    expect(grainConvoy(s, 'hautepierre')).toBe(0);          // pas deux convois d'urgence coup sur coup
+    const eta = Math.max(...s.convoys!.map(c => c.arriveTime)) - s.time;
+    advanceTime(s, eta + 60);
+    expect(qty(market.stock, 'grain')).toBeGreaterThanOrEqual(0);
+    expect(s.events.some(e => e.text.includes('Le convoi de Saint-Aubin'))).toBe(true);
+    expect(s.convoys!.length).toBe(0);
+    expect(checkIntegrity(s)).toEqual([]);
   });
 });
 
@@ -302,5 +309,87 @@ describe('Cohérence des emplois (phase 6)', () => {
     const hired = hireBest(s, manor, [c]);
     expect(hired?.id).toBe(c.id);
     expect(c.unpaidWages).toBe(0);
+  });
+});
+
+describe('Limites levées (phase 6, second passage)', () => {
+  it('un prisonnier est nourri même quand l’intendance est à sec', () => {
+    const s = createWorld(660);
+    s.observer = true;
+    const c = Object.values(s.characters).find(x => !x.isPlayer && x.alive && x.age >= 20)!;
+    const sid = s.locations[c.homeId].settlementId;
+    const manor = s.businesses[s.settlements[sid].manorId];
+    const house = s.orgs[s.settlements[sid].lordHouseId];
+    // caisses publiques vides : l'argent passe à quelqu'un d'autre (aucun denier détruit)
+    const other = Object.values(s.characters).find(x => !x.isPlayer && x.alive && x.id !== c.id)!;
+    transferMoney(s, P.b(manor.id), P.c(other.id), manor.treasury);
+    if (house) transferMoney(s, P.o(house.id), P.c(other.id), house.treasury);
+    transferMoney(s, P.c(c.id), P.c(other.id), c.money);
+    c.inventory = {};
+    c.jailedUntil = s.time + 5 * MIN_PER_DAY;
+    c.locationId = manor.locationId;
+    c.activity = { kind: 'jailed', locationId: manor.locationId, since: s.time, note: 'En prison' };
+    // un grenier qui déborde dans la localité
+    const farm = businessesIn(s, sid).find(b => b.kind === 'farm')!;
+    farm.stock.grain = (farm.targets.grain ?? 0) * 3;
+    c.needs.hunger = 80;
+    feedPrisoners(s);
+    expect(c.needs.hunger).toBeLessThan(80);
+  });
+
+  it('un affamé sans le sou brade ses fagots pour manger', () => {
+    const s = createWorld(661);
+    s.observer = true;
+    const c = Object.values(s.characters).find(x => !x.isPlayer && x.alive && x.age >= 20 && s.locations[x.homeId].settlementId === 'valcendre')!;
+    const bakery = businessesIn(s, 'valcendre').find(b => b.kind === 'bakery')!;
+    c.locationId = bakery.locationId;
+    const other = Object.values(s.characters).find(x => !x.isPlayer && x.alive && x.id !== c.id)!;
+    transferMoney(s, P.c(c.id), P.c(other.id), c.money);
+    c.inventory = { wood: 30 };
+    c.relations = {};
+    c.needs.hunger = 75;
+    s.time += minutesUntilHour(s.time, 10);
+    for (let h = 0; h < 3 && qty(c.inventory, 'wood') === 30; h++) advanceTime(s, 60);
+    expect(qty(c.inventory, 'wood')).toBeLessThan(30);
+  });
+
+  it('au pilote automatique, un débutant gagne la confiance d’un patron puis signe un contrat', () => {
+    const s = createWorld(662);
+    for (let k = 0; k < 8 && !s.characters[s.playerId].employerId && !s.encounter; k++) liveDays(s, 7);
+    const p = s.characters[s.playerId];
+    expect(p.employerId).toBeTruthy();
+    expect(s.contracts.some(k => k.workerId === p.id && k.status === 'active')).toBe(true);
+    expect(checkIntegrity(s)).toEqual([]);
+  });
+
+  it('l’intendance confie une affaire sans propriétaire en gérance à un chômeur', () => {
+    const s = createWorld(663);
+    const b = allBusinesses(s).find(x => x.kind === 'woodlot')!;
+    const sid = s.locations[b.locationId].settlementId;
+    const old = s.characters[b.ownerId!];
+    b.ownerId = null;
+    if (old.employerId === b.id) old.employerId = undefined;
+    weeklyStewardship(s);
+    expect(b.ownerId).toBeTruthy();
+    expect(s.locations[s.characters[b.ownerId!].homeId].settlementId).toBe(sid);
+    expect(checkIntegrity(s)).toEqual([]);
+  });
+
+  it('à l’été une ferme aisée prend des journaliers de moisson, libérés à l’hiver', () => {
+    const s = createWorld(664);
+    s.observer = true;
+    const farm = allBusinesses(s).find(b => b.kind === 'farm')!;
+    const jump = (days: number) => { s.time += days * MIN_PER_DAY; s.processedHours += days * 24; };
+    jump(28); // été
+    const giver = Object.values(s.characters).find(x => !x.isPlayer && x.alive && x.money > 50)!;
+    transferMoney(s, P.c(giver.id), P.b(farm.id), giver.money);
+    farm.lastStaffChangeDay = -10;
+    manageBusiness(s, farm);
+    expect((farm.seasonal ?? []).length).toBeGreaterThan(0);
+    const hired = farm.seasonal![0];
+    jump(56); // hiver
+    manageBusiness(s, farm);
+    expect(farm.employees.includes(hired)).toBe(false);
+    expect(checkIntegrity(s)).toEqual([]);
   });
 });

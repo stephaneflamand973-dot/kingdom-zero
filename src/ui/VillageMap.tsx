@@ -260,6 +260,17 @@ function RegionMap({ state, onTravel }: { state: GameState; onTravel: (squareId:
           </g>
         );
       })}
+      {(state.convoys ?? []).map(c => {
+        const t = Math.min(1, Math.max(0, (state.time - c.departTime) / Math.max(1, c.arriveTime - c.departTime)));
+        const pos = posOf(c.from, c.to, t);
+        return (
+          <g key={c.id} transform={`translate(${pos.x} ${pos.y})`}>
+            <rect x="-9" y="-7" width="18" height="14" rx="3" fill={c.urgent ? '#a8322d' : '#7a8f4a'} stroke="#3b2a18" strokeWidth="2" />
+            <circle cx="-5" cy="8" r="3" fill="#3b2a18" /><circle cx="5" cy="8" r="3" fill="#3b2a18" />
+            <title>{`Convoi de ${c.cargo.grain ?? 0} boisseaux de grain, de ${S[c.from].name} vers ${S[c.to].name}${c.urgent ? ' (urgence)' : ''}`}</title>
+          </g>
+        );
+      })}
       {state.settlementOrder.map(id => {
         const st = S[id];
         const mins = travelMinutes(state, p.locationId, st.squareId);

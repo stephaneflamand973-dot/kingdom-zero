@@ -153,6 +153,7 @@ export interface Business {
   daysInDeficit: number;
   lastTreasury: number;
   lastStaffChangeDay: number;
+  seasonal?: string[];      // journaliers de moisson, libérés à l'hiver (phase 6)
   lastShortageDay: Partial<Record<ItemId, number>>;
   /** Fondée par un particulier (phase 3) */
   founded?: number;
@@ -173,6 +174,7 @@ export type EventType =
 
 /** Aléa du monde (phase 6) : météo, épidémie, incendie, foire… */
 export type IncidentKind = 'secheresse' | 'recolte' | 'grand_froid' | 'epidemie' | 'incendie' | 'foire';
+export interface GrainConvoy { id: string; from: string; to: string; marketId: string; cargo: Inventory; departTime: number; arriveTime: number; urgent: boolean }
 export interface Incident { id: string; kind: IncidentKind; settlementId: string; fromDay: number; toDay: number; businessId?: string }
 
 export interface WorldEvent {
@@ -418,6 +420,8 @@ export interface GameState {
   /** Dernier jour où les anniversaires ont été fêtés (évite un double vieillissement). */
   birthdaysDoneDay?: number;
   gameOver?: string;
+  /** Convois de grain en route (phase 6) : la cargaison existe physiquement pendant le trajet. */
+  convoys?: GrainConvoy[];
   /** Aléas en cours ou récents (phase 6). */
   incidents?: Incident[];
   /** Dernière heure où un PNJ a abordé le joueur de lui-même (phase 6). */

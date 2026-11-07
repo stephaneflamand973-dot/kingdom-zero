@@ -286,6 +286,13 @@ export function manageBusiness(state: GameState, b: Business, procurementOnly = 
           text: `${fullName(owner)} prélève ${take} d sur les bénéfices de ${b.name}.`,
         });
       }
+    } else if (b.treasury > reserve * 3 && (b.employees.length >= b.maxWorkers || !isHiring(state, b))) {
+      // phase 6 : une caisse qui déborde sans pouvoir embaucher verse un dividende (l'argent ne dort pas)
+      const take = Math.floor((b.treasury - reserve * 2) * 0.5);
+      if (take > 0 && transferMoney(state, P.b(b.id), P.c(owner.id), take)) {
+        logEvent(state, { type: 'dividend', actorId: owner.id, businessId: b.id, importance: 1,
+          text: `${fullName(owner)} retire ${take} d de la caisse pleine de ${b.name}.` });
+      }
     } else if (owner.money > comfort * 1.5 && b.treasury < reserve) {
       // Le propriétaire renfloue son affaire avec ses deniers personnels
       const inject = Math.min(owner.money - comfort, reserve - b.treasury);
@@ -313,6 +320,26 @@ export function manageBusiness(state: GameState, b: Business, procurementOnly = 
       if (g) { b.lastStaffChangeDay = day; return; }
     }
   }
+  // Moissons (phase 6) : l'été et l'automne, une ferme aisée prend des journaliers saisonniers
+  if (b.kind === 'farm') {
+    const season = toDate(state.time).season;
+    const harvest = season === 1 || season === 2;
+    b.seasonal = (b.seasonal ?? []).filter(id => b.employees.includes(id));
+    if (!harvest && b.seasonal.length) {
+      for (const id of b.seasonal) {
+        const w = state.characters[id];
+        fireEmployee(state, b, w, 'les moissons sont finies');
+        if (b.ownerId) modifyRelation(state, w.id, b.ownerId, 12, 6); // départ prévu, sans rancune
+      }
+      b.seasonal = [];
+      b.lastStaffChangeDay = day;
+      return;
+    }
+    if (harvest && b.seasonal.length < 2 && b.treasury > reserve * 1.3 && settled) {
+      const h = hireBest(state, b);
+      if (h) { b.seasonal.push(h.id); b.lastStaffChangeDay = day; return; }
+    }
+  }
   const outputs = b.sells.filter(i => RECIPES[b.kind]?.outputs[i]);
   const overproducing = outputs.length > 0 && outputs.every(i => qty(b.stock, i) > (b.targets[i] ?? 0) * 2.5);
   const cannotPay = isManor
@@ -338,7 +365,7 @@ export function isHiring(state: GameState, b: Business): boolean {
   if (b.kind === 'manor') {
     // phase 6 : des chemins en mauvais état font embaucher des journaliers plus tôt
     const roadsBad = businessSettlement(state, b).infrastructure < 45;
-    return b.treasury > (roadsBad ? 150 : 380) + b.employees.length * (roadsBad ? 50 : 70);
+    return b.treasury > (roadsBad ? 150 : 260) + b.employees.length * (roadsBad ? 50 : 60);
   }
   const outputs = b.sells.filter(i => RECIPES[b.kind]?.outputs[i]);
   const underproducing = outputs.some(i => qty(b.stock, i) < (b.targets[i] ?? 0));
@@ -423,6 +450,7 @@ export function totalItems(state: GameState): Inventory {
   for (const id of state.characterOrder) for (const [k, v] of Object.entries(state.characters[id].inventory)) addItem(out, k as ItemId, v!);
   for (const id of state.businessOrder) for (const [k, v] of Object.entries(state.businesses[id].stock)) addItem(out, k as ItemId, v!);
   for (const cv of state.caravans) if (cv.status === 'en_route') for (const [k, v] of Object.entries(cv.cargo)) addItem(out, k as ItemId, v!);
+  for (const cv of state.convoys ?? []) for (const [k, v] of Object.entries(cv.cargo)) addItem(out, k as ItemId, v!);
   for (const pr of state.properties) for (const [k, v] of Object.entries(pr.storage)) addItem(out, k as ItemId, v!);
   for (const id of state.orgOrder ?? []) for (const [k, v] of Object.entries(state.orgs[id].stash)) addItem(out, k as ItemId, v!);
   return out;
