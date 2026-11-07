@@ -4,7 +4,7 @@ import {
   activeIncidents, advanceTime, allBusinesses, askPrice, buy, burn, canWork, checkIntegrity, checksum, continueAs, createLoan, loanTerms,
   createWorld, dailyIncidents, deserialize, eat, encounterAction, epidemicFactor, forage, incidentYield, itemBalance, liveDays,
   MIN_PER_DAY, moneyBalance, moveTo, npcApproaches, qty, SAVE_VERSION, serialize, sleep, sleepOptions, talk, totalItems,
-  feedPrisoners, weeklyStewardship, manageBusiness, logEvent, totalMoney, train, wait, work, transferMoney, transferBusiness, hireBest, P, settleEstate, minutesUntilHour, grainConvoy, businessesIn, residents, type EncounterChoice, type GameState, type TalkKind,
+  feedPrisoners, weeklyStewardship, manageBusiness, hospice, transferItem, isPublicWorker, logEvent, totalMoney, train, wait, work, transferMoney, transferBusiness, hireBest, P, settleEstate, minutesUntilHour, grainConvoy, businessesIn, residents, type EncounterChoice, type GameState, type TalkKind,
 } from '../src/engine';
 import { mulberry } from './util';
 
@@ -390,6 +390,77 @@ describe('Limites levées (phase 6, second passage)', () => {
     jump(56); // hiver
     manageBusiness(s, farm);
     expect(farm.employees.includes(hired)).toBe(false);
+    expect(checkIntegrity(s)).toEqual([]);
+  });
+});
+
+describe('Plus de morts de faim, moins de chômage (phase 6, troisième passage)', () => {
+  it('l’hospice nourrit une personne à bout de forces, d’abord sur la réserve publique', () => {
+    const s = createWorld(670);
+    s.observer = true;
+    const c = Object.values(s.characters).find(x => !x.isPlayer && x.alive && x.age >= 20 && s.locations[x.homeId].settlementId === 'valcendre')!;
+    const manor = s.businesses[s.settlements.valcendre.manorId];
+    c.inventory = {}; c.needs.hunger = 95;
+    // la réserve publique détient du pain (déplacé depuis une boulangerie : rien n'est créé)
+    const bakery = businessesIn(s, 'valcendre').find(b => b.kind === 'bakery')!;
+    bakery.stock.bread = Math.max(qty(bakery.stock, 'bread'), 3);
+    transferItem(s, P.b(bakery.id), P.b(manor.id), 'bread', 2);
+    const items0 = totalItems(s), money0 = totalMoney(s);
+    expect(hospice(s)).toBeGreaterThanOrEqual(1);
+    expect(c.needs.hunger).toBeLessThan(95);
+    expect(qty(manor.stock, 'bread')).toBe(1);
+    expect(totalMoney(s)).toBe(money0);
+    expect(itemBalance(items0, s, totalItems(s))).toEqual({});
+  });
+
+  it('caisses vides : l’hospice prend la ration en charité sur le stock le mieux garni', () => {
+    const s = createWorld(671);
+    s.observer = true;
+    const sid = 'staubin';
+    const st = s.settlements[sid];
+    const sink = Object.values(s.characters).find(x => !x.isPlayer && x.alive && s.locations[x.homeId].settlementId !== sid)!;
+    transferMoney(s, P.b(st.manorId), P.c(sink.id), s.businesses[st.manorId].treasury);
+    const house = s.orgs[st.lordHouseId];
+    transferMoney(s, P.o(house.id), P.c(sink.id), house.treasury);
+    const c = residents(s, sid).find(x => x.age >= 20)!;
+    c.inventory = {}; c.needs.hunger = 95;
+    expect(hospice(s)).toBeGreaterThanOrEqual(1);
+    expect(c.needs.hunger).toBeLessThan(95);
+  });
+
+  it('en urgence, quand personne ne peut payer, la localité voisine donne son surplus (rien de créé)', () => {
+    const s = createWorld(672);
+    s.observer = true;
+    for (const b of businessesIn(s, 'hautepierre')) { delete b.stock.bread; delete b.stock.grain; }
+    const st = s.settlements.hautepierre;
+    const sink = Object.values(s.characters).find(x => !x.isPlayer && x.alive && s.locations[x.homeId].settlementId === 'valcendre')!;
+    const market = businessesIn(s, 'hautepierre').find(b => b.kind === 'market')!;
+    transferMoney(s, P.b(market.id), P.c(sink.id), market.treasury);
+    transferMoney(s, P.b(st.manorId), P.c(sink.id), s.businesses[st.manorId].treasury);
+    transferMoney(s, P.o(st.lordHouseId), P.c(sink.id), s.orgs[st.lordHouseId].treasury);
+    for (const c of residents(s, 'hautepierre')) { c.needs.hunger = 70; delete c.inventory.bread; delete c.inventory.grain; }
+    businessesIn(s, 'staubin').find(b => b.kind === 'farm')!.stock.grain = 400;
+    const money0 = totalMoney(s), items0 = totalItems(s);
+    const n = grainConvoy(s, 'hautepierre');
+    expect(n).toBeGreaterThan(0);
+    expect(s.events.some(e => e.text.includes('donnés par charité'))).toBe(true);
+    expect(totalMoney(s)).toBe(money0);
+    expect(totalItems(s)).toEqual(items0);
+  });
+
+  it('une ferme peut recruter un journalier des ateliers publics (employeur de dernier recours)', () => {
+    const s = createWorld(673);
+    const manor = s.businesses[s.settlements.valcendre.manorId];
+    const farm = businessesIn(s, 'valcendre').find(b => b.kind === 'farm')!;
+    const c = residents(s, 'valcendre').find(x => !x.employerId && x.age >= 18 && x.age < 60 && !allBusinesses(s).some(b => b.ownerId === x.id))
+      ?? residents(s, 'valcendre').find(x => x.age >= 18 && x.age < 60 && !allBusinesses(s).some(b => b.ownerId === x.id))!;
+    if (c.employerId) { const b = s.businesses[c.employerId]; b.employees = b.employees.filter(id => id !== c.id); }
+    c.employerId = manor.id; c.profession = 'journalier'; manor.employees.push(c.id);
+    expect(isPublicWorker(s, c)).toBe(true);
+    const hired = hireBest(s, farm, [c]);
+    expect(hired?.id).toBe(c.id);
+    expect(manor.employees.includes(c.id)).toBe(false);
+    expect(c.employerId).toBe(farm.id);
     expect(checkIntegrity(s)).toEqual([]);
   });
 });

@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 import { npcApproaches } from './approaches';
 import { weeklyPatronage } from './family';
-import { dailyIncidents, epidemicFactor, grainConvoy, hasIncident, processConvoys, weeklyStewardship } from './incidents';
+import { dailyIncidents, epidemicFactor, grainConvoy, hasIncident, hospice, processConvoys, weeklyPublicWorks, weeklyStewardship } from './incidents';
 import { RECIPES, WORK_ENERGY_COST, WORK_SKILL, WORK_ATTR, FIRST_NAMES_F, FIRST_NAMES_M, LAST_NAMES } from './data';
 import { askPrice, isHiring, laborMultiplier, manageBusiness, P, payWage, runProduction, transferItem, transferMoney, weeklyWageReview, totalMoney, referencePrice, fireEmployee } from './economy';
 import { logEvent, pruneEvents } from './events';
@@ -182,6 +182,7 @@ export function hourTick(state: GameState): void {
   const me = state.characters[state.playerId];
   if (state.autopilotUntil && state.autopilotUntil > state.time && me.alive && !state.encounter) npcDecide(state, me, d.hour, d.weekday, true);
   npcApproaches(state); // phase 6 : un PNJ peut aborder le joueur de lui-même
+  hospice(state);       // phase 6 : personne ne meurt de faim quand la localité a de quoi manger
 
   // 8. Vie sociale : regroupement par lieu
   const groups: Record<string, Character[]> = {};
@@ -342,6 +343,7 @@ export function dayTick(state: GameState): void {
     weeklyCourtship(state);
     weeklyPatronage(state);
     weeklyStewardship(state);
+    weeklyPublicWorks(state);
     for (const sid of state.settlementOrder) grainConvoy(state, sid, true);
   }
 

@@ -375,7 +375,7 @@ export function dailyServants(state: GameState): void {
   for (const s of npcs(state)) {
     if (!s.masterId) continue;
     const m = state.characters[s.masterId];
-    if (!m?.alive || m.money < 150 || s.employerId || (s.jailedUntil ?? 0) > state.time) {
+    if (!m?.alive || m.money < 110 || s.employerId || (s.jailedUntil ?? 0) > state.time) {
       s.masterId = undefined;
       continue;
     }
@@ -384,7 +384,7 @@ export function dailyServants(state: GameState): void {
   for (const m of npcs(state)) {
     // phase 6 : plus on est riche, plus on entretient de domestiques (jusqu'à trois)
     const staff = npcs(state).filter(x => x.masterId === m.id).length;
-    if (m.money <= 300 || isChild(m) || staff >= Math.min(3, Math.floor(m.money / 350))) continue;
+    if (m.money <= 220 || isChild(m) || staff >= Math.min(3, Math.floor(m.money / 260))) continue;
     const sid = settlementIdOf(state, m.homeId);
     const s = residents(state, sid)
       .filter(x => x.id !== m.id && !x.employerId && !x.masterId && !isChild(x) && x.age < 65 && x.profession !== 'seigneur' && (x.jailedUntil ?? 0) <= state.time)

@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 100 tests automatisés (scénarios A–G, phases 2 à 6, invariants, fuzz) |
+| `npm test` | 104 tests automatisés (scénarios A–G, phases 2 à 6, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -365,12 +365,14 @@ Les cinq limites restantes de la phase 6 ont été traitées, chacune mesurée a
   ou le prisonnier, ou données par un grenier qui déborde ; on mendie aussi le grain ; un affamé sans le sou
   brade ses biens au demi-prix ; on ne ramasse plus de bois que personne n'achète ; la soupe populaire ne
   ferme plus dès que la caisse baisse ; un contrat prend fin à la mort du salarié (bogue trouvé par le fuzz).
-  Résultat : **0 à 6 morts de faim en 16 ans** selon le monde (contre des dizaines auparavant).
+  Résultat à ce stade : 0 à 6 morts de faim en 16 ans selon le monde (contre des dizaines auparavant) ; le
+  troisième passage les a fait disparaître.
 - **Le chômage.** Les fermes aisées embauchent des **journaliers de moisson** l'été et l'automne (libérés à
   l'hiver, sans rancune) ; une caisse qui déborde sans pouvoir embaucher verse un **dividende** (qui finance
   domestiques et dons aux hospices) ; l'intendance confie toute affaire restée sans maître **en gérance** au
   chômeur le plus capable ; l'intendance embauche des journaliers dès 260 d en caisse. Chômage moyen sur
-  16 ans : **14 à 25 %** selon le monde (≈ 19 % en moyenne), contre 30 à 45 % mesurés aux phases précédentes.
+  16 ans à ce stade : 14 à 25 % selon le monde (≈ 19 % en moyenne), contre 30 à 45 % aux phases précédentes ;
+  ramené à 4 à 11 % au troisième passage.
   Les chemins se maintiennent entre 40 et 61 : sous 40, les travailleurs donnent aussi un peu de leur temps.
 - **Le débutant au pilote automatique.** Sans place, il fait chaque matin une journée chez le patron qui lui
   fait le plus confiance, puis signe un contrat dès que la confiance est acquise. Sur 12 mondes : 12 survies
@@ -379,6 +381,29 @@ Les cinq limites restantes de la phase 6 ont été traitées, chacune mesurée a
   script `scripts/check-sound.cjs` ouvre le jeu dans Chromium avec la règle réelle des navigateurs et
   constate : silence avant tout geste, ambiance audible (niveau ≈ 0,004), bruitage d'action (≈ 0,006),
   silence une fois coupé (≈ 0,00001), retour une fois rétabli.
+
+### Troisième passage : plus de morts de faim, chômage résiduel
+
+Les deux problèmes restés partiels ont été repris jusqu'à disparition des morts de faim sur toutes les
+simulations de référence.
+
+- **Hospice.** Chaque heure, une personne à bout de forces (faim ≥ 85, rien sur elle) reçoit une ration
+  tant que sa localité a de quoi manger : d'abord sur la **réserve publique** (les vivres des défunts sans
+  héritier recueillis par l'intendance, qui jusque-là dormaient), puis achetée par l'intendance ou la maison
+  seigneuriale, et sinon donnée en charité par le stock le mieux garni (y compris le grain d'un fournil).
+- **Convois d'urgence qui partent vraiment.** Ils se déclenchent dès que les vivres tombent à deux rations par
+  habitant, achètent aussi le pain de garde d'un fournil voisin, et, quand ni le marché, ni l'intendance, ni la
+  maison ne peuvent payer, la localité voisine **donne** son surplus (aumône entre paroisses). En urgence, un
+  voisin partage dès qu'il lui reste quatre rations par habitant.
+- **Ateliers publics.** Chaque lundi, la maison seigneuriale reverse à l'intendance de quoi payer des
+  journaliers quand des habitants sont sans travail ; l'intendance les embauche plus tôt. C'est un employeur
+  de dernier recours : une ferme ou un atelier peut toujours lui reprendre un journalier pour un vrai emploi
+  (sans quoi les moissons manquaient de bras et la nourriture venait à manquer). Les habitants aisés
+  entretiennent un domestique dès 220 d.
+
+Résultats mesurés sur **16 ans et 14 mondes** (graines 42, 7, 1234, 99, 5, 2024, 11, 22, 33, 77, puis 3, 8,
+13 et 500 jamais utilisées pendant les réglages) : **aucun mort de faim**, chômage moyen de **4 à 11 %**,
+48 à 63 habitants à la fin, intégrité et bilans d'argent et d'objets exacts.
 
 Format de sauvegarde v7 ; les sauvegardes v1 à v6 sont migrées automatiquement (testé).
 
@@ -429,8 +454,10 @@ les dialogues (le moteur restera l’autorité sur les faits).
   être attaqués par les brigands.
 - Le son est volontairement simple (synthèse) ; la vérification mesure qu'un signal est produit, pas sa
   qualité à l'oreille.
-- Le chômage est réduit mais pas supprimé (≈ 19 % en moyenne) : l'économie fermée d'une cinquantaine
-  d'habitants ne crée pas assez de demande pour tous, surtout dans le village agricole.
+- Un chômage résiduel de 4 à 11 % subsiste : des jeunes entre deux places, des ateliers publics limités par
+  ce que la maison seigneuriale peut financer.
+- L'hospice et l'aumône entre localités garantissent la survie sans enquête de mérite : un tricheur ou un
+  voleur affamé est nourri comme les autres.
 - Beaucoup de démissions viennent de salaires impayés : les petites entreprises vivent au jour le jour.
 - Le trésor du village est souvent trop maigre pour offrir la bière des fêtes.
 - Le commerce régional reste modeste : l'écart entre prix d'achat et prix de vente des établissements
@@ -441,5 +468,5 @@ les dialogues (le moteur restera l’autorité sur les faits).
   réunissent peu souvent en deux ans simulés.
 - Le joueur ne peut pas encore lever ses propres troupes, rejoindre la bande ni prendre part à une bataille.
 - Pas d'armes ni d'armures : la force d'un combattant ne dépend que de lui.
-- De rares morts de faim restent possibles (0 à 6 en 16 ans selon le monde), le plus souvent un nourrisson
-  de parents ruinés ou un adulte sans le sou, l'hiver.
+- Une mort de faim reste théoriquement possible si toute la région manque de vivres en même temps, ou pour
+  un voyageur bloqué sur la route ; cela n'est arrivé dans aucune des 14 simulations de 16 ans.

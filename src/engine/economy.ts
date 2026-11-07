@@ -3,7 +3,7 @@
 // Invariant : l'argent et les objets ne sont jamais créés lors d'un échange ;
 // seule la production (recettes) crée des biens et seule la consommation en détruit.
 // ─────────────────────────────────────────────────────────────
-import { incidentPrice, incidentYield } from './incidents';
+import { incidentPrice, incidentYield, jobless } from './incidents';
 import { ITEMS, RECIPES, TOOL_WEAR_PER_TOOL, PROFESSION_BY_BUSINESS, WORK_SKILL } from './data';
 import { logEvent } from './events';
 import { SEASON_YIELD, toDate } from './time';
@@ -343,7 +343,7 @@ export function manageBusiness(state: GameState, b: Business, procurementOnly = 
   const outputs = b.sells.filter(i => RECIPES[b.kind]?.outputs[i]);
   const overproducing = outputs.length > 0 && outputs.every(i => qty(b.stock, i) > (b.targets[i] ?? 0) * 2.5);
   const cannotPay = isManor
-    ? b.treasury < (businessSettlement(state, b).infrastructure < 45 ? 70 : 140) && b.employees.some(id => state.characters[id].profession === 'journalier')
+    ? b.treasury < (businessSettlement(state, b).infrastructure < 45 || jobless(state, businessSettlement(state, b).id).length > 0 ? 40 : 140) && b.employees.some(id => state.characters[id].profession === 'journalier')
     : b.treasury < b.wage * 8 * b.employees.length;
   if (isHiring(state, b)) {
     if (hireBest(state, b)) b.lastStaffChangeDay = day;
@@ -357,6 +357,11 @@ export function manageBusiness(state: GameState, b: Business, procurementOnly = 
   }
 }
 
+export function isPublicWorker(state: GameState, c: Character): boolean {
+  const e = c.employerId ? state.businesses[c.employerId] : undefined;
+  return !!e && e.kind === 'manor' && c.profession === 'journalier';
+}
+
 /** Règle unique d'embauche, utilisée par le propriétaire comme par les candidats. */
 export function isHiring(state: GameState, b: Business): boolean {
   if (b.employees.length >= b.maxWorkers) return false;
@@ -364,8 +369,10 @@ export function isHiring(state: GameState, b: Business): boolean {
   if (day - b.lastStaffChangeDay < 2) return false;
   if (b.kind === 'manor') {
     // phase 6 : des chemins en mauvais état font embaucher des journaliers plus tôt
-    const roadsBad = businessSettlement(state, b).infrastructure < 45;
-    return b.treasury > (roadsBad ? 150 : 260) + b.employees.length * (roadsBad ? 50 : 60);
+    // chemins abîmés, ou habitants sans travail : l'intendance ouvre des ateliers publics plus tôt
+    const st = businessSettlement(state, b);
+    const cheap = st.infrastructure < 45 || jobless(state, st.id).length > 0;
+    return b.treasury > (cheap ? 120 : 260) + b.employees.length * (cheap ? 45 : 60);
   }
   const outputs = b.sells.filter(i => RECIPES[b.kind]?.outputs[i]);
   const underproducing = outputs.some(i => qty(b.stock, i) < (b.targets[i] ?? 0));
@@ -378,7 +385,8 @@ export function hireBest(state: GameState, b: Business, candidates?: Character[]
   const here = settlementIdOf(state, b.locationId);
   const pool = (candidates ?? state.characterOrder.map(id => state.characters[id]))
     .filter(c => settlementIdOf(state, c.homeId) === here && c.profession !== 'seigneur' && c.profession !== 'soldat')
-    .filter(c => c.alive && !c.isPlayer && !c.employerId && c.age >= 14 && c.age < 70 && !state.businessOrder.some(id => state.businesses[id].ownerId === c.id));
+    // un journalier des ateliers publics est libre de prendre un vrai emploi (l'intendance est l'employeur de dernier recours)
+    .filter(c => c.alive && !c.isPlayer && (!c.employerId || (b.kind !== 'manor' && isPublicWorker(state, c))) && c.age >= 14 && c.age < 70 && !state.businessOrder.some(id => state.businesses[id].ownerId === c.id));
   if (pool.length === 0) return undefined;
   const scored = pool
     .map(c => ({ c, rel: b.ownerId ? getRelation(state, b.ownerId, c.id) : { affinity: 0, trust: 0 } }))
@@ -387,6 +395,11 @@ export function hireBest(state: GameState, b: Business, candidates?: Character[]
     .sort((x, y) => y.score - x.score || (x.c.id < y.c.id ? -1 : 1));
   if (!scored.length) return undefined;
   const hired = scored[0].c;
+  if (hired.employerId) {
+    // quitte les ateliers publics pour cette place
+    const prev = state.businesses[hired.employerId];
+    prev.employees = prev.employees.filter(id => id !== hired.id);
+  }
   hired.employerId = b.id;
   hired.jobSince = toDate(state.time).day;
   // les arriérés d'un ancien employeur ne concernent pas le nouveau (sinon : démission immédiate en boucle)
