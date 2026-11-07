@@ -21,6 +21,7 @@ const GLYPHS: Record<LocationKind, JSX.Element> = {
   houses: (<g {...S}><path d="M4 33 V21 L12 14 L20 21 V33 Z" /><path d="M18 33 V18 L27 10 L36 18 V33 Z" /><path d="M10 33 V27 H14 V33 M25 24 h4 v4 h-4 z" /></g>),
   farm: (<g {...S}><path d="M5 33 V18 L15 10 L25 18 V33 Z" /><path d="M10 33 V25 H20 V33 M10 25 L20 33 M20 25 L10 33" /><path d="M30 33 V16 M30 16 l-3 -4 M30 16 l3 -4 M30 21 l-3 -4 M30 21 l3 -4 M30 26 l-3 -4 M30 26 l3 -4" /></g>),
   woodlot: (<g {...S}><path d="M13 34 V26 M13 26 L5 26 L13 8 L21 26 Z" /><path d="M28 34 V27 M28 27 L21 27 L28 12 L35 27 Z" /></g>),
+  road: (<g {...S}><path d="M14 36 L18 4 M26 36 L22 4" /><path d="M20 8 v4 M20 18 v4 M20 28 v4" /></g>),
   mine: (<g {...S}><path d="M3 34 L15 12 L22 22 L27 16 L37 34 Z" /><path d="M14 34 V28 Q18 23 22 28 V34" /><path d="M27 6 Q33 7 36 12 M31 8 L25 18" /></g>),
 };
 

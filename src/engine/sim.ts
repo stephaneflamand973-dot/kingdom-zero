@@ -5,7 +5,7 @@
 // `processedHours` garantit qu'une heure n'est jamais simulée deux fois.
 // ─────────────────────────────────────────────────────────────
 import { RECIPES, WORK_ENERGY_COST, WORK_SKILL, WORK_ATTR, FIRST_NAMES_F, FIRST_NAMES_M, LAST_NAMES } from './data';
-import { laborMultiplier, manageBusiness, P, payWage, runProduction, transferMoney, weeklyWageReview, totalMoney, referencePrice, fireEmployee } from './economy';
+import { askPrice, isHiring, laborMultiplier, manageBusiness, P, payWage, runProduction, transferItem, transferMoney, weeklyWageReview, totalMoney, referencePrice, fireEmployee } from './economy';
 import { logEvent, pruneEvents } from './events';
 import { maxWorkHours, npcDecide } from './npc';
 import { chance, pick, randInt } from './rng';
@@ -13,10 +13,13 @@ import { gainXp } from './skills';
 import { socialHour } from './social';
 import { MIN_PER_DAY, MIN_PER_HOUR, START_OFFSET_MIN, toDate, DAYS_PER_YEAR } from './time';
 import type { Character, GameState, Inventory, ItemId } from './types';
-import { addItem, aliveCharacters, allBusinesses, clamp, fullName, hasTrait, newId, npcs, qty } from './util';
+import { addItem, aliveCharacters, allBusinesses, businessesIn, businessSettlement, clamp, fullName, hasTrait, hereSettlement, homeSettlement, locationsIn, manorOf, newId, npcs, qty, residents, settlementIdOf } from './util';
+import { merchantsPlanTrips, processCaravans } from './trade';
+import { collectRents } from './property';
+import { weeklyTerritories } from './territory';
 import { npcBorrowing, ownedBusinesses, processLoans } from './finance';
 import { merchantFulfils, postOrder, processOrders, weeklyContractReview } from './contracts';
-import { festivalTonight, initialAmbition, jobHopping, processAmbitions, startFestival, trySlander } from './society';
+import { festivalTonight, initialAmbition, jobHopping, processAmbitions, startFestivals, trySlander } from './society';
 import { ITEM_IDS } from './data';
 
 export const HUNGER_PER_HOUR = 4;
@@ -68,7 +71,7 @@ export function applyHourlyNeeds(state: GameState, c: Character): void {
   }
   // Santé
   let dh = 0;
-  if (n.hunger >= 100) dh -= 1.6;
+  if (n.hunger >= 100) dh -= 0.7; // une famine tue en quelques jours, pas en quelques heures
   else if (n.hunger >= 85) dh -= 0.4;
   if (n.energy <= 0) dh -= 1;
   if (c.sick > 0) { dh -= 0.5; c.sick -= 1; }
@@ -105,7 +108,8 @@ export function hourTick(state: GameState): void {
     const productivity = (0.6 + c.skills[skill] / 125 + c.attributes[WORK_ATTR[b.kind]] * 0.03)
       * (c.sick > 0 ? 0.5 : 1) * (c.needs.energy < 15 ? 0.6 : 1) * laborMultiplier(b);
     if (b.kind === 'manor') {
-      if (c.profession === 'journalier' || c.isPlayer) state.village.infrastructure = clamp(state.village.infrastructure + 0.12 * productivity, 0, 100);
+      const st = businessSettlement(state, b);
+      if (c.profession === 'journalier' || c.isPlayer) st.infrastructure = clamp(st.infrastructure + 0.12 * productivity, 0, 100);
     } else if (RECIPES[b.kind]) {
       b.laborPool += productivity;
     }
@@ -137,7 +141,10 @@ export function hourTick(state: GameState): void {
   }
   if (d.hour === 7 || d.hour === 13) for (const b of allBusinesses(state)) manageBusiness(state, b, d.hour === 13);
   if (d.hour === 13) merchantFulfils(state);
-  if (d.hour === 17 && d.dayOfSeason === 1) startFestival(state);
+  if (d.hour === 17 && d.dayOfSeason === 1) startFestivals(state);
+  // Phase 3 : caravanes en route et départs des marchands
+  processCaravans(state);
+  if (d.hour === 7) merchantsPlanTrips(state);
 
   // 6. Démissions pour salaires impayés
   for (const c of npcs(state)) {
@@ -155,17 +162,29 @@ export function hourTick(state: GameState): void {
   for (const c of aliveCharacters(state)) {
     if (c.activity.kind === 'socialize') (groups[c.locationId] ??= []).push(c);
   }
-  const bonus = festivalTonight(state) ? 2 : 0;
-  for (const id of Object.keys(groups).sort()) socialHour(state, groups[id], (a, b) => { trySlander(state, a, b); }, bonus);
+  for (const id of Object.keys(groups).sort()) socialHour(state, groups[id], (a, b) => { trySlander(state, a, b); }, festivalTonight(state, id) ? 2 : 0);
+
+  // Le joueur relève les prix de la localité où il se trouve
+  const pl = state.characters[state.playerId];
+  if (pl.alive && !state.observer && state.locations[pl.locationId]?.kind !== 'road') recordPrices(state, settlementIdOf(state, pl.locationId));
 
   if (d.hour === 0) dayTick(state);
+}
+
+export function localPrices(state: GameState, settlementId: string): Partial<Record<ItemId, number>> {
+  const prices: Partial<Record<ItemId, number>> = {};
+  for (const it of ITEM_IDS) { const p = referencePrice(state, it, settlementId); if (p !== undefined) prices[it] = p; }
+  return prices;
+}
+
+export function recordPrices(state: GameState, settlementId: string): void {
+  state.priceBook[settlementId] = { day: toDate(state.time).day, prices: localPrices(state, settlementId) };
 }
 
 // ── Jour ─────────────────────────────────────────────────────
 
 export function dayTick(state: GameState): void {
   const d = toDate(state.time);
-  const manor = state.businesses[state.village.manorId];
 
   for (const c of aliveCharacters(state)) {
     c.hoursWorkedToday = 0;
@@ -208,12 +227,15 @@ export function dayTick(state: GameState): void {
   }
 
   // Routes et bâtiments s'usent
-  state.village.infrastructure = clamp(state.village.infrastructure - 0.6, 0, 100);
+  for (const sid of state.settlementOrder) {
+    const st = state.settlements[sid];
+    st.infrastructure = clamp(st.infrastructure - 0.3, 0, 100);
+  }
 
   // Maladies (l'insalubrité et la faim augmentent le risque)
   for (const c of aliveCharacters(state)) {
     if (c.sick > 0) continue;
-    let p = 0.006 + (state.village.infrastructure < 40 ? 0.008 : 0) + (c.needs.hunger > 70 ? 0.01 : 0) + (c.age > 55 ? 0.006 : 0);
+    let p = 0.006 + (hereSettlement(state, c).infrastructure < 40 ? 0.008 : 0) + (c.needs.hunger > 70 ? 0.01 : 0) + (c.age > 55 ? 0.006 : 0);
     if (d.season === 3) p *= 1.6;
     if (chance(state, p)) {
       c.sick = randInt(state, 18, 60);
@@ -235,39 +257,44 @@ export function dayTick(state: GameState): void {
   // Hebdomadaire (chaque lundi) : impôts, salaires, migrations
   if (d.weekday === 0 && d.day > 0) {
     for (const b of allBusinesses(state)) {
-      if (b.id === manor.id) continue;
-      const tax = Math.floor(Math.max(0, b.treasury) * state.village.taxRate);
-      if (tax > 0 && transferMoney(state, P.b(b.id), P.b(manor.id), tax)) {
-        logEvent(state, { type: 'tax', businessId: b.id, importance: 1, text: `L'intendance perçoit ${tax} d d'impôt sur ${b.name}.` });
+      if (b.kind === 'manor') continue;
+      const st = businessSettlement(state, b);
+      const tax = Math.floor(Math.max(0, b.treasury) * st.taxRate);
+      if (tax > 0 && transferMoney(state, P.b(b.id), P.b(st.manorId), tax)) {
+        logEvent(state, { type: 'tax', businessId: b.id, importance: 1, text: `L'intendance de ${st.name} perçoit ${tax} d d'impôt sur ${b.name}.` });
       }
       weeklyWageReview(state, b);
     }
-    // Taxe par foyer : chaque adulte verse sa part à l'intendance
-    let head = 0;
+    // Taxe par foyer : chaque adulte verse sa part à l'intendance de sa localité
     for (const c of npcs(state)) {
       if (c.age < 16) continue;
       const due = Math.min(c.money, HEAD_TAX);
-      if (due > 0 && transferMoney(state, P.c(c.id), P.b(manor.id), due)) head += due;
+      if (due > 0) transferMoney(state, P.c(c.id), P.b(homeSettlement(state, c).manorId), due);
     }
     const pl = state.characters[state.playerId];
     if (pl.alive && !state.observer && pl.money > 0) {
       const due = Math.min(pl.money, HEAD_TAX);
-      transferMoney(state, P.c(pl.id), P.b(manor.id), due);
-      head += due;
-      logEvent(state, { type: 'tax', actorId: pl.id, importance: 1, text: `Le collecteur de l'intendance te réclame ${due} d de taxe de foyer.` });
+      const st = hereSettlement(state, pl);
+      transferMoney(state, P.c(pl.id), P.b(st.manorId), due);
+      logEvent(state, { type: 'tax', actorId: pl.id, importance: 1, text: `Le collecteur de ${st.name} te réclame ${due} d de taxe de foyer.` });
     }
-    if (head) logEvent(state, { type: 'tax', importance: 1, text: `La taxe de foyer rapporte ${head} d à l'intendance.` });
-    weeklyWageReview(state, manor);
-    almsgiving(state);
-    migration(state);
+    for (const sid of state.settlementOrder) {
+      weeklyWageReview(state, manorOf(state, sid));
+      almsgiving(state, sid);
+      migration(state, sid);
+    }
+    collectRents(state);
+    weeklyTerritories(state);
   }
+
+  for (const sid of state.settlementOrder) soupKitchen(state, sid);
 
   // Phase 2 : dettes, commandes, ambitions, contrats
   processLoans(state);
   processOrders(state);
   processAmbitions(state);
   if (d.weekday === 0 && d.day > 0) weeklyContractReview(state);
-  if (state.festival && state.festival.day < d.day) state.festival = undefined;
+  state.festivals = state.festivals.filter(f => f.day >= d.day);
 
   snapshot(state);
   pruneEvents(state);
@@ -282,7 +309,7 @@ function snapshot(state: GameState): void {
     day: d.day, prices, totalMoney: totalMoney(state), population: pop.length,
     employed: pop.filter(c => c.employerId).length,
     avgHunger: Math.round(pop.reduce((s, c) => s + c.needs.hunger, 0) / Math.max(1, pop.length)),
-    villageTreasury: state.businesses[state.village.manorId].treasury,
+    villageTreasury: state.settlementOrder.reduce((s, id) => s + manorOf(state, id).treasury, 0),
   });
   if (state.history.length > 240) state.history.shift();
 }
@@ -294,7 +321,7 @@ export function killCharacter(state: GameState, c: Character, cause: string): vo
   c.alive = false;
   c.health = 0;
   c.deathTime = state.time;
-  const manor = state.businesses[state.village.manorId];
+  const manor = manorOf(state, homeSettlement(state, c).id);
   const death = logEvent(state, {
     type: 'death', actorId: c.id, locationId: c.locationId, importance: 3,
     text: c.isPlayer ? `Tu meurs ${cause}, à ${c.age} ans.` : `${fullName(c)} est mort ${cause}, à ${c.age} ans.`,
@@ -333,37 +360,62 @@ export function killCharacter(state: GameState, c: Character, cause: string): vo
 }
 
 /** L'intendance redistribue une part de ses réserves aux plus démunis (filet de sécurité). */
-function almsgiving(state: GameState): void {
-  const manor = state.businesses[state.village.manorId];
+function almsgiving(state: GameState, settlementId: string): void {
+  const manor = manorOf(state, settlementId);
   if (manor.treasury < 700) return;
-  const poor = npcs(state).filter(c => c.money < 15 && c.age >= 14);
+  const poor = residents(state, settlementId).filter(c => c.money < 15 && c.age >= 14);
   if (!poor.length) return;
   const each = Math.min(15, Math.floor((manor.treasury - 600) / poor.length));
   if (each <= 0) return;
   for (const c of poor) transferMoney(state, P.b(manor.id), P.c(c.id), each);
-  logEvent(state, { type: 'help', importance: 2, locationId: 'square',
-    text: `L'intendance distribue une aumône de ${each} d à ${poor.length} habitant${poor.length > 1 ? 's' : ''} dans le besoin.`,
+  logEvent(state, { type: 'help', importance: 2, locationId: state.settlements[settlementId].squareId,
+    text: `L'intendance de ${state.settlements[settlementId].name} distribue une aumône de ${each} d à ${poor.length} habitant${poor.length > 1 ? 's' : ''} dans le besoin.`,
     witnesses: poor.map(c => c.id) });
 }
 
-/** Des étrangers s'installent quand le village se dépeuple (entrée externe tracée). */
-function migration(state: GameState): void {
-  const pop = npcs(state).length;
-  if (pop >= 18) return;
+/** Soupe populaire : l'intendance achète du pain pour les affamés sans le sou (si sa caisse le permet). */
+export function soupKitchen(state: GameState, settlementId: string): void {
+  const manor = manorOf(state, settlementId);
+  const hungry = residents(state, settlementId).filter(c => c.money < 5 && c.needs.hunger > 55 && qty(c.inventory, 'bread') === 0);
+  if (!hungry.length || manor.treasury < 150) return;
+  const bakery = businessesIn(state, settlementId).filter(b => b.sells.includes('bread') && b.kind !== 'manor' && qty(b.stock, 'bread') > 0)
+    .sort((a, b) => askPrice(state, a, 'bread') - askPrice(state, b, 'bread'))[0];
+  if (!bakery) return;
+  const price = askPrice(state, bakery, 'bread');
+  let served = 0;
+  for (const c of hungry) {
+    const n = Math.min(3, qty(bakery.stock, 'bread'));
+    if (n <= 0 || manor.treasury - n * price < 100) break;
+    transferMoney(state, P.b(manor.id), P.b(bakery.id), n * price);
+    transferItem(state, P.b(bakery.id), P.c(c.id), 'bread', n);
+    served++;
+  }
+  if (served) logEvent(state, { type: 'help', importance: 1, locationId: state.settlements[settlementId].squareId,
+    text: `L'intendance de ${state.settlements[settlementId].name} fait distribuer du pain à ${served} affamé${served > 1 ? 's' : ''}.` });
+}
+
+/** Des étrangers s'installent quand une localité se dépeuple (entrée externe tracée). */
+function migration(state: GameState, settlementId: string): void {
+  const st = state.settlements[settlementId];
+  const pop = residents(state, settlementId).length;
+  if (pop >= st.popCap) return;
+  // on ne vient s'installer que là où l'on entend dire qu'il y a du travail
+  if (!businessesIn(state, settlementId).some(b => isHiring(state, b))) return;
+  if (residents(state, settlementId).some(c => !c.employerId && c.age < 60)) return; // des chômeurs attendent déjà
   const sex = chance(state, 0.5) ? 'M' : 'F';
   const id = newId(state, 'c');
   const money = 25;
-  const house = state.locationOrder.find(l => state.locations[l].kind === 'houses')!;
+  const house = locationsIn(state, settlementId, 'houses')[0]?.id ?? st.squareId;
   const c: Character = {
     id, firstName: pick(state, sex === 'M' ? FIRST_NAMES_M : FIRST_NAMES_F), lastName: pick(state, LAST_NAMES),
     age: randInt(state, 17, 40), sex, isPlayer: false, alive: true, profession: 'sans_emploi', homeId: house,
-    locationId: state.locationOrder[0], money, inventory: { bread: 2 }, health: 90, sick: 0,
+    locationId: st.squareId, money, inventory: { bread: 2 }, health: 90, sick: 0,
     needs: { hunger: 30, energy: 70, social: 40 },
     attributes: { force: randInt(state, 3, 7), endurance: randInt(state, 3, 7), agilite: randInt(state, 3, 7), intelligence: randInt(state, 3, 7), charisme: randInt(state, 3, 7), perception: randInt(state, 3, 7), volonte: randInt(state, 3, 7) },
     skills: { agriculture: randInt(state, 5, 30), artisanat: randInt(state, 5, 25), commerce: randInt(state, 0, 15), combat: randInt(state, 0, 15), diplomatie: randInt(state, 0, 15), discretion: randInt(state, 0, 15), gestion: randInt(state, 0, 10), commandement: 0 },
     skillXp: {}, traits: [pick(state, ['travailleur', 'sociable', 'timide', 'honnete', 'malhonnete', 'paresseux'] as const), pick(state, ['ambitieux', 'loyal', 'bavard', 'prudent', 'rancunier', 'genereux'] as const)],
     goal: { kind: 'trouver_emploi' }, relations: {}, knownEvents: [],
-    activity: { kind: 'idle', locationId: state.locationOrder[0], since: state.time, note: 'Vient d’arriver au village' },
+    activity: { kind: 'idle', locationId: st.squareId, since: state.time, note: 'Vient d’arriver' },
     unpaidWages: 0, hoursWorkedToday: 0, lastMealTime: state.time, forageProgress: 0,
     ambition: { kind: 'vie_paisible', since: state.time },
   };
@@ -373,8 +425,8 @@ function migration(state: GameState): void {
   state.ledger.externalMoneyIn += money;
   addItem(state.ledger.externalItemsIn, 'bread', 2);
   logEvent(state, { type: 'arrival', actorId: id, importance: 2, locationId: c.locationId,
-    text: `${fullName(c)}, venu d'un village voisin, s'installe à ${state.village.name} pour chercher du travail.`,
-    witnesses: aliveCharacters(state).map(x => x.id) });
+    text: `${fullName(c)}, venu d'au-delà des collines, s'installe à ${st.name} pour chercher du travail.`,
+    witnesses: residents(state, settlementId).map(x => x.id) });
 }
 
 export { maxWorkHours };

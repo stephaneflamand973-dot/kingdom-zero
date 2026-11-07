@@ -1,8 +1,9 @@
-# KINGDOM ZERO — Phase 2 (v0.2.0)
+# KINGDOM ZERO — Phase 3 (v0.3.0)
 
-Simulation de vie médiévale / RPG sandbox systémique. Le village de **Valcendre** vit sans le joueur :
-19 habitants travaillent, achètent, mangent, se lient d’amitié, se disputent, perdent leur emploi,
-volent, tombent malades, meurent et sont remplacés par des migrants. Le joueur arrive **sans un denier**.
+Simulation de vie médiévale / RPG sandbox systémique. Le **pays de Valcendre** vit sans le joueur :
+trois localités reliées par des routes, environ 48 habitants qui travaillent, achètent, mangent, se lient
+d’amitié, se disputent, s’endettent, déménagent, montent des caravanes, perdent leur emploi, volent,
+tombent malades, meurent et sont remplacés par des migrants. Le joueur arrive **sans un denier**.
 
 ## Lancer le jeu
 
@@ -18,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 33 tests automatisés (scénarios A–G, phase 2, invariants) |
+| `npm test` | 47 tests automatisés (scénarios A–G, phases 2 et 3, invariants) |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
 | `npm run demo` | partie scriptée de bout en bout, affichée dans le terminal |
 | `npm run sim -- 224 42` | simulation headless : 224 jours, graine 42, bilan économique |
@@ -49,6 +50,10 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
   finance.ts       prêts, échéances hebdomadaires, défaut, saisie de biens et d’entreprise (phase 2)
   contracts.ts     place salariée du joueur, tableau des commandes (phase 2)
   society.ts       ambitions des PNJ, rachat d’entreprise, mobilité, vengeance, fêtes, réputation (phase 2)
+  trade.ts         caravanes marchandes, charge portée, mémoire des prix des marchands (phase 3)
+  property.ts      logements : location, achat, coffre, loyers, expulsion (phase 3)
+  enterprise.ts    rachat et gestion d’entreprise par le joueur, fondations (phase 3)
+  territory.ts     prospérité des localités, relevés hebdomadaires, déménagements (phase 3)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
 tests/             Vitest
 scripts/           demo et simulation headless
@@ -117,6 +122,50 @@ Ces trajectoires dépendent de la graine : la plupart des parties n'en voient qu
 
 Format de sauvegarde v2 ; les sauvegardes v1 sont migrées automatiquement (testé).
 
+## Phase 3 — économie et territoires
+
+**Trois localités.** Valcendre (carrefour), Saint-Aubin-sur-Loue (bourg agricole : blé abondant, ni fer
+ni forge) et Hautepierre (bourg minier : fer riche, grande forge, terrasses pauvres). Chacune a son
+intendance, son impôt, ses chemins, sa garde, sa fête. Routes : Valcendre ↔ Saint-Aubin 5 h,
+Valcendre ↔ Hautepierre 7 h ; Saint-Aubin ↔ Hautepierre passe par Valcendre (12 h). Le monde continue
+de tourner heure par heure pendant le voyage.
+
+**Commerce local, prix locaux.** Habitants et entreprises n'achètent que dans la localité où ils se
+trouvent ; la spécialisation (rendements ×1,5 pour le blé de Saint-Aubin, ×1,8 pour le fer de
+Hautepierre) crée de vrais écarts de prix. Le joueur ne connaît les prix d'une localité que par son
+dernier passage (onglet Monde → Prix de la région).
+
+**Caravanes.** Les marchands comparent les prix connus de chaque destination (relevés hebdomadaires :
+l'information a du retard), achètent une cargaison, partent sur la route (on les voit avancer sur la
+carte régionale), vendent à destination, puis rentrent chargés. La cargaison existe physiquement pendant
+le trajet. Ils retiennent le prix réellement obtenu et évitent de répéter un voyage perdant. Deux
+marchands qui inondent la même localité se font concurrence.
+
+**Charge portée.** 40 + 4 × force unités de poids (le grain pèse 2, le fer 3…). Pour commercer en grand,
+il faut un logement avec coffre.
+
+**Logements.** Une chambre se loue à l'auberge, une maison se loue ou s'achète auprès de l'intendance.
+On y dort gratuitement et on y entrepose. Le loyer se paie chaque lundi ; impayé, c'est l'expulsion et
+la saisie du coffre.
+
+**Entreprises.** Le joueur peut racheter une affaire à vendre (ou faire une offre à un propriétaire qui
+le connaît et l'estime), puis la diriger : caisse, salaire, effectif, stocks visés ; un contremaître
+achète, vend et embauche selon ces consignes. Il peut aussi fonder un comptoir, une boulangerie, un
+cabaret ou une forge depuis une place (travaux payés à l'intendance, fonds de roulement dans la caisse).
+Les PNJ ambitieux sans affaire à racheter peuvent fonder là où l'offre manque.
+
+**Territoires vivants.** Chaque lundi, la prospérité de chaque localité est recalculée (emploi, faim,
+richesse, chemins, santé des entreprises). Les chômeurs sans perspective déménagent vers une localité
+qui embauche ; les migrants extérieurs ne viennent que s'il n'y a pas déjà de chômeurs sur place.
+Une soupe populaire nourrit les affamés sans le sou quand le trésor local le permet.
+
+Sur 224 jours simulés sans le joueur (4 graines) : 6 à 11 décès pour environ 48 habitants, 2 à 5
+déménagements, 1 à 3 saisies d'entreprise, 0 ou 1 rachat, 7 à 10 expéditions de caravane ; masse
+monétaire et bilan matière exacts.
+
+Format de sauvegarde v3 ; les sauvegardes v1 et v2 sont migrées automatiquement (testé) — une partie
+v2 voit s'ouvrir les routes vers les deux bourgs.
+
 ## État réel du développement
 
 ### Implémenté et testé
@@ -137,15 +186,19 @@ Format de sauvegarde v2 ; les sauvegardes v1 sont migrées automatiquement (test
 
 ### Partiel
 - Les ambitions se limitent à cinq types ; pas encore de mariage ni de projets familiaux.
-- Le joueur ne peut pas encore acheter une entreprise ni diriger lui-même une affaire saisie (une
-  affaire saisie par le joueur est gérée automatiquement, les dividendes lui reviennent).
+- Le joueur ne peut pas encore affréter sa propre caravane ni embaucher un charretier : il transporte
+  lui-même, dans la limite de sa charge.
+- Les PNJ peuvent fonder une affaire, mais les conditions (épargne, pénurie locale) sont rarement réunies :
+  aucune fondation spontanée sur les simulations de référence.
+- Niveaux de détail : les ~48 PNJ sont tous simulés finement à l’heure (environ 13 ms par jour simulé, mesuré) ;
+  une simulation allégée des localités lointaines viendra avec une carte plus vaste.
 - Combat : uniquement une riposte physique à l’insulte ; pas de combat au tour par tour.
 - Création de personnage : profil adulte équilibré fixe (choix prévu par la consigne pour la v1).
 - Niveaux de détail : tous les PNJ sont simulés en détail à l’heure (suffisant à 20 PNJ : environ 3,5 ms par
   jour simulé mesurés) ; la simulation simplifiée des PNJ secondaires viendra avec plusieurs villages.
 
 ### Prévu (phases suivantes)
-Plusieurs villages et caravanes ; achat et gestion d'entreprises par le joueur ; propriété ; organisations, criminalité structurée, noblesse ; familles, naissances,
+Caravanes du joueur, brigandage sur les routes ; organisations, criminalité structurée, noblesse ; familles, naissances,
 héritage du joueur ; combat au tour par tour ; intégration optionnelle d’un modèle de langage pour
 les dialogues (le moteur restera l’autorité sur les faits).
 
@@ -156,4 +209,9 @@ les dialogues (le moteur restera l’autorité sur les faits).
 - Le chômage est structurel (environ 30 à 45 %) : l’économie fermée ne crée pas assez de demande pour tous.
 - Beaucoup de démissions viennent de salaires impayés : les petites entreprises vivent au jour le jour.
 - Le trésor du village est souvent trop maigre pour offrir la bière des fêtes.
+- Le commerce régional reste modeste : l'écart entre prix d'achat et prix de vente des établissements
+  est large, les caravanes ne partent que lorsqu'une pénurie creuse les prix.
+- Les marchands s'endettent souvent et finissent saisis par leurs créanciers : leurs expéditions sont
+  risquées, et la même histoire se répète d'une partie à l'autre.
+- Les chemins se dégradent encore plus vite que l'intendance ne les répare.
 - Pas de son ni d’animations au-delà des transitions CSS.

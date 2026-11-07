@@ -21,10 +21,11 @@ export type ProfessionId =
   | 'fermier' | 'bucheron' | 'mineur' | 'boulanger' | 'aubergiste'
   | 'forgeron' | 'marchand' | 'garde' | 'intendant' | 'journalier' | 'sans_emploi';
 
-export type LocationKind = 'square' | 'farm' | 'market' | 'tavern' | 'forge' | 'bakery' | 'woodlot' | 'mine' | 'houses' | 'manor';
+export type LocationKind = 'square' | 'farm' | 'market' | 'tavern' | 'forge' | 'bakery' | 'woodlot' | 'mine' | 'houses' | 'manor' | 'road';
 
 export interface Location {
   id: string;
+  settlementId: string; // localité (ou 'road' pour une route)
   name: string;
   kind: LocationKind;
   x: number; // coordonnées carte (0..1000)
@@ -55,6 +56,7 @@ export interface Activity {
   since: number;     // minute de début
   note?: string;     // raison lisible (dérivée de la décision)
   wage?: number;     // salaire horaire négocié (journalier)
+  until?: number;    // fin d'une activité longue (voyage)
   quality?: number;  // qualité du repos (0..1) pour le sommeil
 }
 
@@ -139,6 +141,8 @@ export interface Business {
   lastTreasury: number;
   lastStaffChangeDay: number;
   lastShortageDay: Partial<Record<ItemId, number>>;
+  /** Fondée par un particulier (phase 3) */
+  founded?: number;
 }
 
 export type EventType =
@@ -147,7 +151,8 @@ export type EventType =
   | 'shortage' | 'dividend' | 'tax' | 'insult' | 'compliment' | 'rumor' | 'starving'
   | 'inheritance' | 'production' | 'refusal' | 'chat' | 'help' | 'cold' | 'spoilage'
   | 'loan' | 'loan_repaid' | 'default' | 'seizure' | 'sale' | 'contract' | 'contract_warning'
-  | 'work_praise' | 'order_posted' | 'order_done' | 'order_failed' | 'slander' | 'festival' | 'rivalry';
+  | 'work_praise' | 'order_posted' | 'order_done' | 'order_failed' | 'slander' | 'festival' | 'rivalry'
+  | 'caravan' | 'founding' | 'move' | 'rent' | 'eviction' | 'property';
 
 export interface WorldEvent {
   id: string;
@@ -211,7 +216,60 @@ export interface SupplyOrder {
   status: 'open' | 'taken' | 'done' | 'failed' | 'expired';
 }
 
-export interface Festival { day: number; alePaid: number; name: string }
+export interface Festival { day: number; alePaid: number; name: string; settlementId: string }
+
+/** Localité de la région (phase 3) : son intendance, ses routes, sa prospérité. */
+export interface Settlement {
+  id: string;
+  name: string;
+  kind: 'village' | 'bourg';
+  x: number; y: number;          // position sur la carte régionale (0..1000 × 0..640)
+  squareId: string;              // place centrale
+  manorId: string;               // intendance locale
+  stewardId: string | null;      // intendant
+  taxRate: number;
+  infrastructure: number;        // état des chemins (0..100)
+  yields: Partial<Record<BusinessKind, number>>; // spécialisation : multiplicateurs de rendement
+  specialty: string;
+  prosperity: number;            // 0..100, recalculée chaque semaine
+  popCap: number;                // au-delà, les migrants ne s'installent plus
+  history: SettlementSnapshot[];
+}
+
+export interface SettlementSnapshot { day: number; prosperity: number; population: number; employed: number; prices: Partial<Record<ItemId, number>> }
+
+export interface Road { a: string; b: string; hours: number; locationId: string }
+
+/** Caravane marchande : la cargaison existe physiquement pendant le trajet. */
+export interface Caravan {
+  id: string;
+  merchantId: string;
+  from: string; to: string;      // localités
+  cargo: Inventory;
+  cost: number;                  // prix d'achat payé
+  departTime: number;
+  arriveTime: number;
+  status: 'en_route' | 'arrived';
+  returning: boolean;
+}
+
+/** Logement : à louer ou à vendre, avec un coffre. */
+export interface Property {
+  id: string;
+  settlementId: string;
+  locationId: string;
+  name: string;
+  price: number;
+  weeklyRent: number;
+  ownerId: string | null;        // null = intendance locale
+  tenantId?: string;
+  rentDueDay?: number;
+  storage: Inventory;
+  storageCap: number;
+}
+
+/** Relevé de prix d'une localité tel que le joueur l'a vu. */
+export interface PriceRecord { day: number; prices: Partial<Record<ItemId, number>> }
 
 export interface Ledger {
   produced: Inventory;
@@ -248,14 +306,21 @@ export interface GameState {
   eventSeq: number;
   idSeq: number;
   playerId: string;
-  village: { name: string; taxRate: number; manorId: string; infrastructure: number };
+  settlements: Record<string, Settlement>;
+  settlementOrder: string[];
+  roads: Road[];
+  caravans: Caravan[];
+  properties: Property[];
+  priceBook: Record<string, PriceRecord>;
+  /** Mémoire des marchands : prix unitaire réellement obtenu, par marchand, destination et bien. */
+  tradeMemory: Record<string, number>;
   ledger: Ledger;
   history: DailySnapshot[];
   stats: { ticks: number; trades: number; npcActions: number };
   loans: Loan[];
   contracts: JobContract[];
   orders: SupplyOrder[];
-  festival?: Festival;
+  festivals: Festival[];
   gameOver?: string;
   /** Mode observateur (tests/simulations) : le joueur n'a ni besoins ni présence. */
   observer?: boolean;

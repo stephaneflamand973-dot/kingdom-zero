@@ -9,12 +9,12 @@ import { attemptTheft } from './crime';
 import { askPrice, hireBest, isHiring, outputCap, P, priceForCharacter, sellersOf, trade, tradeRefusal, transferItem, transferMoney } from './economy';
 import { toDate } from './time';
 import { friendlyLoan } from './finance';
-import { festivalTonight, serveFestivalAle } from './society';
+import { festivalAt, festivalTonight, serveFestivalAle } from './society';
 import { logEvent } from './events';
 import { chance } from './rng';
 import { getRelation, modifyRelation } from './social';
 import type { Activity, ActivityKind, Business, Character, GameState, ItemId } from './types';
-import { addItem, allBusinesses, charactersAt, clamp, employerOf, fullName, hasTrait, isOpen, qty } from './util';
+import { addItem, businessesIn, charactersAt, clamp, employerOf, fullName, hasTrait, hereSettlement, homeSettlement, isOpen, locationsIn, qty, settlementIdOf } from './util';
 import { FOODS, RECIPES } from './data';
 
 export function maxWorkHours(c: Character): number {
@@ -41,13 +41,14 @@ export function eat(state: GameState, c: Character): boolean {
 }
 
 export function workLocation(state: GameState, c: Character, b: Business, hour: number): string {
+  const sid = settlementIdOf(state, b.locationId);
   if (c.profession === 'garde') {
-    const rounds = ['square', 'market', 'tavern', 'square'];
+    const rounds = ['square', 'market', 'tavern', 'square'] as const;
     const kind = rounds[hour % rounds.length];
-    return state.locationOrder.find(id => state.locations[id].kind === kind) ?? b.locationId;
+    return locationsIn(state, sid, kind)[0]?.id ?? b.locationId;
   }
   if (b.kind === 'manor' && c.profession === 'journalier') {
-    return state.locationOrder.find(id => state.locations[id].kind === 'square') ?? b.locationId; // travaux de voirie
+    return state.settlements[sid].squareId; // travaux de voirie
   }
   return b.locationId;
 }
@@ -56,6 +57,12 @@ interface Option { score: number; run: () => void }
 
 export function npcDecide(state: GameState, c: Character, hour: number, weekday: number): void {
   if (!c.alive || c.isPlayer) return;
+  // En voyage (caravane) : le trajet occupe la personne jusqu'à l'arrivée
+  if (c.activity.kind === 'travel' && (c.activity.until ?? 0) > state.time) {
+    if (c.needs.hunger >= 40) eat(state, c); // on mange ses provisions en chemin
+    return;
+  }
+  const home = homeSettlement(state, c);
   const n = c.needs;
   const job = employerOf(state, c);
   const sunday = weekday === 6;
@@ -125,13 +132,13 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
   // Ramasser du bois mort : le gagne-pain des démunis
   if (!job && !night && hour >= 7 && hour < 18 && c.money < 60 && c.age < 72 && n.energy > 20) {
     const s = 52 + (c.money < 15 ? 12 : 0) - (hasTrait(c, 'paresseux') ? 10 : 0);
-    const wood = state.locationOrder.find(id => state.locations[id].kind === 'woodlot')!;
+    const wood = locationsIn(state, home.id, 'woodlot')[0]?.id ?? home.squareId;
     opts.push({ score: s, run: () => setActivity(state, c, 'forage', wood, 'Ramasse du bois mort en lisière') });
   }
 
   // Sociabiliser à la taverne (la fête de saison attire tout le village)
-  const tavern = allBusinesses(state).find(b => b.kind === 'tavern');
-  const feast = festivalTonight(state);
+  const tavern = businessesIn(state, home.id).find(b => b.kind === 'tavern');
+  const feast = festivalTonight(state, home.squareId);
   if (tavern && hour >= 17 && hour < 23 && (n.social < 85 || feast) && n.energy > 15) {
     let s = 30 + (100 - n.social) * 0.45 + (feast ? 45 : 0);
     if (hasTrait(c, 'sociable')) s += 15;
@@ -143,7 +150,7 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
   // Vengeance nocturne : un malhonnête rancunier vole dans l'affaire de son ennemi
   const a = c.ambition;
   if (a.kind === 'vengeance' && a.targetId && hasTrait(c, 'malhonnete') && hour === 23 && chance(state, 0.15)) {
-    const target = allBusinesses(state).find(b => b.ownerId === a.targetId);
+    const target = businessesIn(state, home.id).find(b => b.ownerId === a.targetId);
     const item = target && (Object.keys(target.stock) as ItemId[]).filter(i => qty(target.stock, i) > 0)
       .sort((x, y) => ITEMS[y].base - ITEMS[x].base)[0];
     if (target && item) {
@@ -219,7 +226,7 @@ function seekHelp(state: GameState, c: Character, hour: number): void {
     return;
   }
   // 1 bis. Mendier les invendus d'un commerce en surplus (plutôt que de les laisser rassir)
-  for (const b of allBusinesses(state)) {
+  for (const b of businessesIn(state, homeSettlement(state, c).id)) {
     if (!b.ownerId || !b.sells.includes('bread') || !isOpen(b, hour)) continue;
     const surplus = qty(b.stock, 'bread') - (b.targets.bread ?? 0) * 1.2;
     const owner = state.characters[b.ownerId];
@@ -240,7 +247,7 @@ function seekHelp(state: GameState, c: Character, hour: number): void {
   // 2. Le désespoir pousse les malhonnêtes (ou les affamés) au vol
   const desperate = c.needs.hunger >= 90 || hasTrait(c, 'malhonnete');
   if (desperate && !hasTrait(c, 'honnete') && chance(state, hasTrait(c, 'malhonnete') ? 0.6 : 0.25)) {
-    const target = allBusinesses(state).find(b => b.sells.includes('bread') && qty(b.stock, 'bread') > 0);
+    const target = businessesIn(state, homeSettlement(state, c).id).find(b => b.sells.includes('bread') && qty(b.stock, 'bread') > 0);
     if (target) {
       c.locationId = target.locationId;
       const out = attemptTheft(state, c, target, 'bread', 1);
@@ -263,13 +270,14 @@ function giveHelpEvent(state: GameState, giver: Character, receiver: Character, 
 }
 
 function seekJob(state: GameState, c: Character): void {
-  const options = allBusinesses(state)
+  const hs = homeSettlement(state, c);
+  const options = businessesIn(state, hs.id)
     .filter(b => isHiring(state, b))
     .filter(b => !b.ownerId || getRelation(state, b.ownerId, c.id).affinity > -25);
   // rotation déterministe parmi les candidatures possibles
   const b = options.length ? options[(c.hoursWorkedToday + state.processedHours) % options.length] : undefined;
   if (!b) {
-    setActivity(state, c, 'seekJob', state.locationOrder[0], 'Cherche du travail, en vain');
+    setActivity(state, c, 'seekJob', hs.squareId, 'Cherche du travail, en vain');
     return;
   }
   const hired = hireBest(state, b, [c]);
@@ -285,7 +293,7 @@ function buyGoods(state: GameState, c: Character, b: Business, item: ItemId, pri
 }
 
 export function bestBuyer(state: GameState, c: Character, item: ItemId, hour: number): { b: Business; price: number } | undefined {
-  return allBusinesses(state)
+  return businessesIn(state, hereSettlement(state, c).id)
     .filter(b => b.buys.includes(item) && isOpen(b, hour) && b.ownerId !== c.id && !tradeRefusal(state, b, c))
     .filter(b => qty(b.stock, item) + 1 <= outputCap(b, item) && qty(b.stock, item) < (b.targets[item] ?? 0) * 2)
     .map(b => ({ b, price: priceForCharacter(state, b, c, item, 'sell') }))
@@ -304,7 +312,7 @@ function sellGoods(state: GameState, c: Character, b: Business, item: ItemId, pr
 function socialize(state: GameState, c: Character, tavern: Business, hour: number): void {
   let note = `Passe la soirée à ${tavern.name}`;
   if (serveFestivalAle(state, c, tavern)) {
-    setActivity(state, c, 'socialize', tavern.locationId, `Trinque à la ${state.festival!.name.toLowerCase()}`, tavern.id);
+    setActivity(state, c, 'socialize', tavern.locationId, `Trinque à la ${festivalAt(state, tavern.locationId)?.name.toLowerCase() ?? 'fête'}`, tavern.id);
     return;
   }
   // Qui épargne pour s'établir se prive de bière

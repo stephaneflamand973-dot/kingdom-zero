@@ -120,7 +120,7 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 0.04em; margin: 0;
 .loc-label { font-family: var(--display); font-size: 15px; font-weight: 700; fill: #3b2a18; paint-order: stroke; stroke: #f0e2c0; stroke-width: 4px; }
 .player-pin { animation: bob 1.6s ease-in-out infinite; }
 @keyframes bob { 50% { transform: translate(0px, -34px); } }
-.map-tip { position: absolute; top: 12px; right: 12px; background: rgba(27,20,15,.92); border: 1px solid var(--gold); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; font-size: .9rem; pointer-events: none; }
+.map-tip { position: absolute; top: 56px; right: 12px; background: rgba(27,20,15,.92); border: 1px solid var(--gold); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; font-size: .9rem; pointer-events: none; }
 .map-legend { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 10px; flex-wrap: wrap; background: rgba(27,20,15,.78); border-radius: 8px; padding: 5px 10px; font-size: .78rem; }
 .map-legend span { display: flex; align-items: center; gap: 5px; }
 .map-legend i, .person-act i, .census i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1px solid #000; flex: none; }
@@ -293,3 +293,28 @@ h4 { font-size: .75rem; letter-spacing: .14em; text-transform: uppercase; color:
 .tabs button { font-size: .64rem; letter-spacing: .04em; }
 .modal .btn.ghost small { color: #7a5c38; }
 .modal .btn.ghost:disabled { opacity: .55; }
+
+/* ── Phase 3 : région, logements, entreprises ── */
+.map-switch { position: absolute; top: 12px; right: 12px; z-index: 2; display: flex; background: rgba(27,20,15,.85); border: 1px solid var(--gold); border-radius: 99px; padding: 3px; gap: 2px; }
+.map-switch button { background: none; border: none; color: var(--muted); font-family: var(--display); font-size: .72rem; letter-spacing: .1em; padding: 5px 14px; border-radius: 99px; cursor: pointer; }
+.map-switch button.on { background: var(--gold); color: var(--ink); }
+.exit-sign { fill: #f3e6c4; stroke: #6b5434; stroke-width: 2; }
+.exit:hover .exit-sign, .exit:focus .exit-sign { fill: #fff3d6; stroke: var(--gold); stroke-width: 3; }
+.exit-label { font-family: var(--display); font-size: 13px; font-weight: 700; fill: #3b2a18; }
+.exit-time { font-size: 11px; fill: #6b5434; font-family: var(--serif); }
+.road-label { font-family: var(--serif); font-style: italic; font-size: 15px; fill: #5a4026; paint-order: stroke; stroke: #e4d4ae; stroke-width: 4px; }
+.settle-sub { font-family: var(--serif); font-size: 13px; fill: #5a4026; paint-order: stroke; stroke: #ecdcb6; stroke-width: 4px; }
+.owner { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--gold); border-radius: 8px; background: rgba(201,162,74,.06); }
+.owner-head { display: flex; flex-direction: column; margin-bottom: 6px; }
+.owner-grid { display: grid; grid-template-columns: auto auto 1fr; gap: 6px 12px; align-items: center; font-size: .9rem; }
+.owner-grid .slot-btns { justify-content: flex-end; }
+.property { border-style: dashed; }
+.storage { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.storage .crime-row { flex-wrap: wrap; }
+.founding summary { cursor: pointer; list-style: none; }
+.founding input[type=range] { width: 100%; accent-color: #c9a24a; }
+.table-scroll { overflow-x: auto; }
+.prices td.ok { color: #b5d68a; }
+.prices td.ko { color: #ff9b7a; }
+.village-stats { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 760px) { .village-stats { grid-template-columns: repeat(3, 1fr); } .owner-grid { grid-template-columns: 1fr auto; } .owner-grid .slot-btns { grid-column: 1 / -1; justify-content: flex-start; } }

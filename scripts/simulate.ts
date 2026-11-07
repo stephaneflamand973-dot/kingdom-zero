@@ -13,9 +13,7 @@ for (let d = 0; d < days; d++) {
     const pop = aliveCharacters(s).filter(c => !c.isPlayer);
     const emp = pop.filter(c => c.employerId).length;
     const hunger = Math.round(pop.reduce((a, c) => a + c.needs.hunger, 0) / pop.length);
-    const biz = s.businessOrder.map(id => s.businesses[id]).map(b => `${b.id.slice(2)}:${b.treasury}/${b.employees.length}w/w${b.wage}`).join(' ');
-    console.log(`J${d + 1} ${formatDate(s.time)} pop ${pop.length} emp ${emp} faim ${hunger} infra ${s.village.infrastructure.toFixed(0)} | ${pr}\n   ${biz}`);
-    console.log('   stocks', s.businessOrder.map(id => `${id.slice(2)}:${JSON.stringify(s.businesses[id].stock)}`).join(' '));
+    console.log(`J${d + 1} ${formatDate(s.time)} pop ${pop.length} emp ${emp} faim ${hunger} | ${pr}\n   ${s.settlementOrder.map(id => { const st = s.settlements[id]; const rp = (it: string) => referencePrice(s, it as never, id) ?? '-'; return `${st.name.slice(0, 10)}: prosp ${st.prosperity} infra ${st.infrastructure.toFixed(0)} grain ${rp('grain')} pain ${rp('bread')} fer ${rp('iron')} outils ${rp('tools')} bois ${rp('wood')}`; }).join('\n   ')}`);
   }
 }
 const notable = s.events.filter(e => e.importance >= 2);

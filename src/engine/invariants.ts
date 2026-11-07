@@ -29,6 +29,12 @@ export function checkIntegrity(state: GameState): string[] {
     }
     if (b.ownerId && !state.characters[b.ownerId]?.alive) errs.push(`${id}: propriétaire ${b.ownerId} mort ou inconnu`);
   }
+  for (const l of state.locationOrder) if (state.locations[l].kind !== 'road' && !state.settlements[state.locations[l].settlementId]) errs.push(`${l}: localité inconnue`);
+  for (const pr of state.properties) {
+    if (pr.tenantId && !state.characters[pr.tenantId]) errs.push(`${pr.id}: locataire inconnu`);
+    for (const [k, v] of Object.entries(pr.storage)) if (!Number.isInteger(v) || v! < 0) errs.push(`${pr.id}: coffre ${k} invalide`);
+  }
+  for (const cv of state.caravans) for (const [k, v] of Object.entries(cv.cargo)) if (!Number.isInteger(v) || v! < 0) errs.push(`${cv.id}: cargaison ${k} invalide`);
   for (const l of state.loans) {
     if (!state.characters[l.lenderId] || !state.characters[l.borrowerId]) errs.push(`${l.id}: prêt vers un inconnu`);
     if (!Number.isInteger(l.remaining) || l.remaining < 0) errs.push(`${l.id}: reste dû invalide`);

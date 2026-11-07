@@ -7,7 +7,7 @@ import { ITEMS, RECIPES, TOOL_WEAR_PER_TOOL, PROFESSION_BY_BUSINESS, WORK_SKILL 
 import { logEvent } from './events';
 import { SEASON_YIELD, toDate } from './time';
 import type { Business, Character, GameState, Inventory, ItemId } from './types';
-import { addItem, allBusinesses, clamp, fullName, hasTrait, isOpen, ownerName, qty } from './util';
+import { addItem, allBusinesses, clamp, fullName, hasTrait, isOpen, ownerName, qty , businessesIn, businessSettlement, hereSettlement, settlementIdOf } from './util';
 import { getRelation, modifyRelation } from './social';
 
 export type Party = { t: 'c' | 'b'; id: string };
@@ -110,7 +110,8 @@ export function tradeRefusal(state: GameState, b: Business, c: Character): strin
 /** Établissements ouverts vendant un bien, triés par prix croissant pour l'acheteur. */
 export function sellersOf(state: GameState, item: ItemId, hour: number, buyer: Character, ignoreHours = false): { b: Business; price: number }[] {
   const out: { b: Business; price: number }[] = [];
-  for (const b of allBusinesses(state)) {
+  // On n'achète que dans la localité où l'on se trouve
+  for (const b of businessesIn(state, hereSettlement(state, buyer).id)) {
     if (!b.sells.includes(item) || qty(b.stock, item) < 1) continue;
     if (!ignoreHours && !isOpen(b, hour)) continue;
     if (tradeRefusal(state, b, buyer)) continue;
@@ -135,7 +136,8 @@ export function runProduction(state: GameState, b: Business): number {
   const r = RECIPES[b.kind];
   if (!r) return 0;
   const d = toDate(state.time);
-  const mult = r.seasonal ? SEASON_YIELD[d.season] : 1;
+  // Saison (pour les cultures) et spécialisation de la localité (terres, filons)
+  const mult = (r.seasonal ? SEASON_YIELD[d.season] : 1) * (businessSettlement(state, b).yields[b.kind] ?? 1);
   const effLabor = r.labor / mult;
   let batches = 0;
   while (b.laborPool >= effLabor) {
@@ -230,7 +232,8 @@ export function manageBusiness(state: GameState, b: Business, procurementOnly = 
     const target = b.targets[item] ?? 0;
     let need = target - qty(b.stock, item);
     if (need <= 0) continue;
-    const sellers = allBusinesses(state)
+    // L'approvisionnement est local : l'inter-localité passe par les caravanes
+    const sellers = businessesIn(state, settlementIdOf(state, b.locationId))
       .filter(s => s.id !== b.id && s.sells.includes(item) && qty(s.stock, item) > 0)
       .filter(s => !(b.kind !== 'market' && s.kind === 'market' && s.ownerId === null))
       .map(s => ({ s, price: askPrice(state, s, item) }))
@@ -260,7 +263,8 @@ export function manageBusiness(state: GameState, b: Business, procurementOnly = 
   if (procurementOnly) return;
 
   // 3. Rémunération du propriétaire : subsistance si nécessaire, dividende raisonnable sinon
-  if (owner) {
+  //    (un propriétaire joueur gère lui-même la caisse)
+  if (owner && !owner.isPlayer) {
     const comfort = hasTrait(owner, 'avare') || hasTrait(owner, 'ambitieux') ? 400 : 220;
     if (owner.money < 30 && b.treasury > 20) {
       const draw = Math.min(40, Math.floor(b.treasury / 4));
@@ -322,7 +326,9 @@ export function isHiring(state: GameState, b: Business): boolean {
 
 export function hireBest(state: GameState, b: Business, candidates?: Character[], role?: 'garde'): Character | undefined {
   const skill = role === 'garde' ? 'combat' : WORK_SKILL[b.kind];
+  const here = settlementIdOf(state, b.locationId);
   const pool = (candidates ?? state.characterOrder.map(id => state.characters[id]))
+    .filter(c => settlementIdOf(state, c.homeId) === here)
     .filter(c => c.alive && !c.isPlayer && !c.employerId && c.age >= 14 && c.age < 70 && !state.businessOrder.some(id => state.businesses[id].ownerId === c.id));
   if (pool.length === 0) return undefined;
   const scored = pool
@@ -390,11 +396,14 @@ export function totalItems(state: GameState): Inventory {
   const out: Inventory = {};
   for (const id of state.characterOrder) for (const [k, v] of Object.entries(state.characters[id].inventory)) addItem(out, k as ItemId, v!);
   for (const id of state.businessOrder) for (const [k, v] of Object.entries(state.businesses[id].stock)) addItem(out, k as ItemId, v!);
+  for (const cv of state.caravans) if (cv.status === 'en_route') for (const [k, v] of Object.entries(cv.cargo)) addItem(out, k as ItemId, v!);
+  for (const pr of state.properties) for (const [k, v] of Object.entries(pr.storage)) addItem(out, k as ItemId, v!);
   return out;
 }
 
 /** Prix de référence du village pour un bien (le moins cher disponible, tous horaires). */
-export function referencePrice(state: GameState, item: ItemId): number | undefined {
-  const prices = allBusinesses(state).filter(b => b.sells.includes(item) && qty(b.stock, item) > 0).map(b => askPrice(state, b, item));
+export function referencePrice(state: GameState, item: ItemId, settlementId?: string): number | undefined {
+  const pool = settlementId ? businessesIn(state, settlementId) : allBusinesses(state);
+  const prices = pool.filter(b => b.sells.includes(item) && qty(b.stock, item) > 0).map(b => askPrice(state, b, item));
   return prices.length ? Math.min(...prices) : undefined;
 }

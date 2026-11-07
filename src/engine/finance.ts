@@ -236,10 +236,10 @@ export function defaultLoan(state: GameState, loan: Loan, why: string): void {
 
 /** Change le propriétaire d'une entreprise ; l'ancien reste comme ouvrier s'il y a de la place. */
 export function transferBusiness(state: GameState, b: Business, newOwner: Character, oldOwner?: Character): void {
-  b.employees = b.employees.filter(id => id !== newOwner.id);
-  if (newOwner.employerId && newOwner.employerId !== b.id) {
-    const prev = state.businesses[newOwner.employerId];
-    if (prev && prev.ownerId !== newOwner.id) prev.employees = prev.employees.filter(id => id !== newOwner.id);
+  // (un acquéreur employé ailleurs y reste : il devient propriétaire absent)
+  if (b.employees.includes(newOwner.id)) {
+    b.employees = b.employees.filter(id => id !== newOwner.id);
+    if (newOwner.employerId === b.id) newOwner.employerId = undefined;
   }
   b.ownerId = newOwner.id;
   if (!newOwner.employerId) newOwner.employerId = b.id; // un propriétaire déjà employé ailleurs devient rentier

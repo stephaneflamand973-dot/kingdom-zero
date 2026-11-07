@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  toDate, aliveCharacters, allBusinesses, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
+  toDate, residents, businessesIn, settlementIdOf, aliveCharacters, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
   activeContract, activeLoans, ambitionLabel, quitJob, repayLoan, reputationTags,
   moodOf, PROFESSION_NAMES, qty, referencePrice, relationLabel, reputation, reputationLabel, SKILL_NAMES, xpForNextLevel,
   type AttrId, type GameState, type ItemId, type SkillId, type WorldEvent,
@@ -106,6 +106,8 @@ function Affaires({ game }: { game: Game }) {
   const owed = activeLoans(state, { lenderId: p.id });
   const orders = state.orders.filter(o => o.takerId === p.id && o.status === 'taken');
   const day = toDate(state.time).day;
+  const homes = state.properties.filter(pr => pr.tenantId === p.id || pr.ownerId === p.id);
+  const owned = Object.values(state.businesses).filter(b => b.ownerId === p.id);
   const past = [...state.loans.filter(l => (l.borrowerId === p.id || l.lenderId === p.id) && l.status !== 'active')].slice(-4);
   return (
     <div className="affaires">
@@ -116,6 +118,16 @@ function Affaires({ game }: { game: Game }) {
           <button className="btn sm ghost" disabled={over} onClick={() => act(quitJob)}>Démissionner</button>
         </div>
       ) : <p className="muted small">Aucune place. Travaille à la journée, puis demande une place à un patron qui te connaît.</p>}
+      <h4>Logement</h4>
+      {homes.length === 0 && <p className="muted small">Aucun. Une chambre se loue à l’auberge, une maison s’achète auprès de l’intendance.</p>}
+      {homes.map(pr => (
+        <div key={pr.id} className="card-line"><div><b>{pr.name}</b> · {state.settlements[pr.settlementId].name}<div className="muted small">{pr.ownerId === p.id ? 'Propriété' : `Loyer ${pr.weeklyRent} d, prochain dans ${Math.max(0, (pr.rentDueDay ?? day) - day)} j`} · coffre {Object.values(pr.storage).reduce((a, b) => a + (b ?? 0), 0)} objets</div></div></div>
+      ))}
+      <h4>Tes entreprises</h4>
+      {owned.length === 0 && <p className="muted small">Aucune. Rachète une affaire en difficulté ou fonde un établissement depuis une place.</p>}
+      {owned.map(b => (
+        <div key={b.id} className="card-line"><div><b>{b.name}</b> · {state.settlements[settlementIdOf(state, b.locationId)].name}<div className="muted small">Caisse {b.treasury} d · {b.employees.length} ouvrier{b.employees.length > 1 ? 's' : ''} à {b.wage} d/h · stock {(Object.keys(b.stock) as ItemId[]).map(i => `${ITEM_ICON[i]} ${b.stock[i]}`).join(' ') || 'vide'}</div></div></div>
+      ))}
       <h4>Tes dettes</h4>
       {owes.length === 0 && <p className="muted small">Tu ne dois rien à personne.</p>}
       {owes.map(l => (
@@ -219,21 +231,31 @@ function Spark({ values }: { values: number[] }) {
 }
 
 function Monde({ state }: { state: GameState }) {
-  const [view, setView] = useState<'habitants' | 'economie'>('habitants');
-  const pop = aliveCharacters(state).filter(c => !c.isPlayer);
-  const manor = state.businesses[state.village.manorId];
-  const hist = state.history.slice(-28);
+  const p = state.characters[state.playerId];
+  const [view, setView] = useState<'habitants' | 'economie' | 'prix'>('habitants');
+  const [sid, setSid] = useState<string>(settlementIdOf(state, p.locationId));
+  const st = state.settlements[sid];
+  const pop = residents(state, sid);
+  const manor = state.businesses[st.manorId];
+  const hist = st.history.slice(-12);
+  const day = toDate(state.time).day;
   return (
     <div>
+      <div className="seg">
+        {state.settlementOrder.map(id => <button key={id} className={sid === id ? 'on' : ''} onClick={() => setSid(id)}>{state.settlements[id].name.split('-sur-')[0]}</button>)}
+      </div>
+      <p className="muted small">{st.specialty}</p>
       <div className="village-stats">
+        <div><span>Prospérité</span><b>{st.prosperity}</b><Spark values={hist.map(h => h.prosperity)} /></div>
         <div><span>Habitants</span><b>{pop.length}</b></div>
         <div><span>Employés</span><b>{pop.filter(c => c.employerId).length}</b></div>
-        <div><span>Routes</span><b>{Math.round(state.village.infrastructure)}/100</b></div>
-        <div><span>Trésor public</span><b>{manor.treasury} d</b></div>
+        <div><span>Chemins</span><b>{Math.round(st.infrastructure)}/100</b></div>
+        <div><span>Trésor</span><b>{manor.treasury} d</b></div>
       </div>
       <div className="seg">
         <button className={view === 'habitants' ? 'on' : ''} onClick={() => setView('habitants')}>Habitants</button>
-        <button className={view === 'economie' ? 'on' : ''} onClick={() => setView('economie')}>Économie</button>
+        <button className={view === 'economie' ? 'on' : ''} onClick={() => setView('economie')}>Établissements</button>
+        <button className={view === 'prix' ? 'on' : ''} onClick={() => setView('prix')}>Prix de la région</button>
       </div>
       {view === 'habitants' && (
         <ul className="census">
@@ -245,32 +267,38 @@ function Monde({ state }: { state: GameState }) {
                 <div className="small muted">Ambition : {ambitionLabel(state, c)}</div></div>
             </li>
           ))}
-          {state.characterOrder.filter(id => !state.characters[id].alive).map(id => (
+          {state.characterOrder.filter(id => !state.characters[id].alive && settlementIdOf(state, state.characters[id].homeId) === sid).map(id => (
             <li key={id} className="dead"><i /><div><b>{fullName(state.characters[id])}</b> <span className="muted small">† {state.characters[id].activity.note}</span></div></li>
           ))}
         </ul>
       )}
       {view === 'economie' && (
+        <ul className="biz-list">
+          {businessesIn(state, sid).map(b => (
+            <li key={b.id}>
+              <div className="rel-row-head"><b>{b.name}</b><span>{b.treasury} d</span></div>
+              <div className="muted small">{b.ownerId ? (b.ownerId === p.id ? 'À toi' : fullName(state.characters[b.ownerId])) : 'Intendance'} · {b.employees.length}/{b.maxWorkers} employés · {b.wage} d/h{b.founded !== undefined ? ` · fondé le jour ${b.founded + 1}` : ''}</div>
+              <div className="small">{(Object.keys(b.stock) as ItemId[]).map(i => `${ITEM_ICON[i]} ${b.stock[i]}`).join('  ') || 'Aucun stock'}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {view === 'prix' && (
         <div>
-          <table className="prices">
-            <thead><tr><th>Bien</th><th>Prix</th><th>Tendance (28 j)</th><th>Stock total</th></tr></thead>
-            <tbody>
-              {ITEM_IDS.map((i: ItemId) => {
-                const stock = allBusinesses(state).reduce((s, b) => s + qty(b.stock, i), 0);
-                return <tr key={i}><td>{ITEM_ICON[i]} {ITEMS[i].name}</td><td>{referencePrice(state, i) ?? '—'} d</td><td><Spark values={hist.map(h => h.prices[i] ?? 0)} /></td><td>{stock}</td></tr>;
-              })}
-            </tbody>
-          </table>
-          <h4>Établissements</h4>
-          <ul className="biz-list">
-            {allBusinesses(state).map(b => (
-              <li key={b.id}>
-                <div className="rel-row-head"><b>{b.name}</b><span>{b.treasury} d</span></div>
-                <div className="muted small">{b.ownerId ? fullName(state.characters[b.ownerId]) : 'Intendance'} · {b.employees.length}/{b.maxWorkers} employés · {b.wage} d/h</div>
-                <div className="small">{(Object.keys(b.stock) as ItemId[]).map(i => `${ITEM_ICON[i]} ${b.stock[i]}`).join('  ') || 'Aucun stock'}</div>
-              </li>
-            ))}
-          </ul>
+          <p className="muted small">Ce que tu sais des prix : relevés lors de ton dernier passage dans chaque localité. Les prix changent pendant ton absence.</p>
+          <div className="table-scroll">
+            <table className="prices">
+              <thead><tr><th>Bien</th>{state.settlementOrder.map(id => <th key={id}>{state.settlements[id].name.split('-sur-')[0]}<div className="muted small">{state.priceBook[id] ? (state.priceBook[id].day === day ? "aujourd'hui" : `il y a ${day - state.priceBook[id].day} j`) : 'jamais visité'}</div></th>)}</tr></thead>
+              <tbody>
+                {ITEM_IDS.map((i: ItemId) => {
+                  const vals = state.settlementOrder.map(id => state.priceBook[id]?.prices[i]);
+                  const known = vals.filter((v): v is number => v !== undefined);
+                  const lo = Math.min(...known), hi = Math.max(...known);
+                  return <tr key={i}><td>{ITEM_ICON[i]} {ITEMS[i].name}</td>{vals.map((v, k) => <td key={k} className={known.length > 1 && v === lo ? 'ok' : known.length > 1 && v === hi ? 'ko' : ''}>{v ?? '—'}{v !== undefined ? ' d' : ''}</td>)}</tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

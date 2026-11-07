@@ -5,7 +5,7 @@ import { logEvent } from './events';
 import { chance } from './rng';
 import { applyBeliefEffect, modifyRelation } from './social';
 import type { Business, Character, GameState, ItemId, WorldEvent } from './types';
-import { charactersAt, clamp, fullName, qty } from './util';
+import { businessSettlement, charactersAt, clamp, fullName, qty } from './util';
 import { gainXp } from './skills';
 
 export interface TheftOutcome { success: boolean; caught: boolean; event: WorldEvent; fine: number; detectedBy: string[] }
@@ -47,7 +47,7 @@ export function attemptTheft(state: GameState, thief: Character, b: Business, it
   let fine = 0;
   if (guard) {
     fine = Math.min(thief.money, value * 3 + 10);
-    if (fine > 0) transferMoney(state, P.c(thief.id), P.b(state.village.manorId), fine);
+    if (fine > 0) transferMoney(state, P.c(thief.id), P.b(businessSettlement(state, b).manorId), fine);
     logEvent(state, {
       type: 'fine', actorId: guard.id, targetId: thief.id, locationId: b.locationId, importance: 2,
       text: fine > 0

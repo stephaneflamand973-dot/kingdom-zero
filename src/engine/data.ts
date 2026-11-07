@@ -77,3 +77,9 @@ export const FIRST_NAMES_F = ['Aélis', 'Béatrix', 'Clémence', 'Douce', 'Égla
 export const LAST_NAMES = ['Brisebois', 'Courtecuisse', 'Fournier', 'Garnier', 'Lemoine', 'Morel', 'Poitevin', 'Rousseau', 'Vasseur', 'Ferrand', 'Chauvin', 'Bréval'];
 
 export const INITIAL_SKILL_CAP = 40; // aucun départ excellent partout
+
+/** Poids d'une unité (pour la charge portée et les caravanes). */
+export const WEIGHT: Record<ItemId, number> = { grain: 2, bread: 1, ale: 1, wood: 2, iron: 3, tools: 3 };
+export const CARAVAN_CAPACITY = 90;
+/** Coût de transport estimé par unité de poids et par heure de route (péages, fourrage, usure). */
+export const TRANSPORT_COST = 0.04;

@@ -1,7 +1,7 @@
 // Sauvegarde versionnée avec contrôle d'intégrité.
 import { checkIntegrity } from './invariants';
-import type { GameState } from './types';
-import { SAVE_VERSION } from './world';
+import type { Festival, GameState } from './types';
+import { addRegion, SAVE_VERSION, valcendreSettlement } from './world';
 import { initialAmbition } from './society';
 
 export interface SaveFile { format: 'KINGDOM_ZERO_SAVE'; version: number; savedAt: string; checksum: string; state: GameState }
@@ -30,6 +30,21 @@ const MIGRATIONS: Record<number, (s: GameState) => GameState> = {
       const c = s.characters[id];
       if (!c.ambition) c.ambition = c.isPlayer ? { kind: 'vie_paisible', since: s.time } : initialAmbition(s, c);
     }
+    return s;
+  },
+  // v2 → v3 (phase 3) : la région. Valcendre devient une localité parmi trois.
+  2: s => {
+    if ((s as Partial<GameState>).settlements) return s; // déjà régionale
+    const old = (s as unknown as { village: { name: string; taxRate: number; manorId: string; infrastructure: number } }).village;
+    delete (s as unknown as { village?: unknown }).village;
+    const oldFestival = (s as unknown as { festival?: Festival }).festival;
+    delete (s as unknown as { festival?: unknown }).festival;
+    s.settlements = { valcendre: valcendreSettlement(old?.infrastructure ?? 55, old?.taxRate ?? 0.05) };
+    s.settlementOrder = ['valcendre'];
+    for (const id of s.locationOrder) s.locations[id].settlementId = 'valcendre';
+    s.roads = []; s.caravans = []; s.properties = []; s.priceBook = {}; s.tradeMemory = {};
+    s.festivals = oldFestival ? [{ ...oldFestival, settlementId: 'valcendre' }] : [];
+    addRegion(s);
     return s;
   },
 };

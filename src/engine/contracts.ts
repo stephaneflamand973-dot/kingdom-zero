@@ -9,7 +9,7 @@ import { fem, refusalText } from './narrative';
 import { getRelation, modifyRelation } from './social';
 import { toDate } from './time';
 import type { ActionResult, Business, Character, GameState, ItemId, JobContract, SupplyOrder } from './types';
-import { allBusinesses, fullName, newId, player, qty } from './util';
+import { businessesIn, fullName, newId, player, qty, settlementIdOf } from './util';
 
 export const CONTRACT_HOURS = 24;
 
@@ -30,7 +30,8 @@ export function jobOffer(state: GameState, b: Business, p: Character): Offer {
   const no = (reason: string): Offer => ({ ok: false, reason, wage, hours: CONTRACT_HOURS });
   if (activeContract(state, p.id)) return no('Tu as déjà une place. Démissionne d’abord.');
   if (b.kind === 'market') return no('Le marchand ne prend pas de commis.');
-  const owner = b.ownerId ? state.characters[b.ownerId] : state.characters['odon'];
+  const stewardId = state.settlements[settlementIdOf(state, b.locationId)].stewardId;
+  const owner = b.ownerId ? state.characters[b.ownerId] : stewardId ? state.characters[stewardId] : undefined;
   const skill = WORK_SKILL[b.kind];
   if (p.skills[skill] < MIN_SKILL_FOR_DAYWORK[b.kind] + 5) return no(`${owner?.firstName ?? 'On'} exige plus d’expérience (${SKILL_NAMES[skill]} ${p.skills[skill]}/${MIN_SKILL_FOR_DAYWORK[b.kind] + 5}).`);
   if (owner && owner.alive) {
@@ -131,8 +132,8 @@ export function weeklyContractReview(state: GameState): void {
 
 export const ORDER_DAYS = 3;
 
-export function openOrders(state: GameState): SupplyOrder[] {
-  return state.orders.filter(o => o.status === 'open');
+export function openOrders(state: GameState, settlementId?: string): SupplyOrder[] {
+  return state.orders.filter(o => o.status === 'open' && (!settlementId || settlementIdOf(state, state.businesses[o.businessId].locationId) === settlementId));
 }
 
 /** Une entreprise en pénurie affiche une commande au tableau de la place. */
@@ -144,7 +145,7 @@ export function postOrder(state: GameState, b: Business, item: ItemId): SupplyOr
   const day = toDate(state.time).day;
   const o: SupplyOrder = { id: newId(state, 'o'), businessId: b.id, item, qty: qtyNeeded, delivered: 0, unitPrice, postedDay: day, deadlineDay: day + ORDER_DAYS, status: 'open' };
   state.orders.push(o);
-  logEvent(state, { type: 'order_posted', businessId: b.id, locationId: 'square', importance: 1,
+  logEvent(state, { type: 'order_posted', businessId: b.id, locationId: state.settlements[settlementIdOf(state, b.locationId)].squareId, importance: 1,
     text: `${b.name} affiche une commande : ${qtyNeeded} ${ITEMS[item].plural} à ${unitPrice} d pièce.` });
   return o;
 }
@@ -153,7 +154,9 @@ export function acceptOrder(state: GameState, orderId: string): ActionResult {
   const p = player(state);
   const o = state.orders.find(x => x.id === orderId);
   if (!o || o.status !== 'open') return { ok: false, message: 'Cette commande n’est plus disponible.', minutes: 0 };
-  if (state.locations[p.locationId].kind !== 'square') return { ok: false, message: 'Le tableau des commandes est sur la Place du Puits.', minutes: 0 };
+  if (state.locations[p.locationId].kind !== 'square' || settlementIdOf(state, p.locationId) !== settlementIdOf(state, state.businesses[o.businessId].locationId)) {
+    return { ok: false, message: 'Le tableau des commandes se consulte sur la place de la localité concernée.', minutes: 0 };
+  }
   if (state.orders.filter(x => x.takerId === p.id && x.status === 'taken').length >= 2) return { ok: false, message: 'Tu as déjà deux commandes en cours.', minutes: 0 };
   o.status = 'taken';
   o.takerId = p.id;
@@ -201,10 +204,10 @@ export function deliverOrder(state: GameState, orderId: string): ActionResult {
 
 /** Le marchand honore lui-même les commandes qu'il peut servir depuis sa halle. */
 export function merchantFulfils(state: GameState): void {
-  const market = allBusinesses(state).find(b => b.kind === 'market' && b.ownerId);
-  if (!market) return;
   for (const o of openOrders(state)) {
     const b = state.businesses[o.businessId];
+    const market = businessesIn(state, settlementIdOf(state, b.locationId)).find(x => x.kind === 'market' && x.ownerId && x.id !== b.id);
+    if (!market) continue;
     const n = o.qty - o.delivered;
     if (qty(market.stock, o.item) < n) continue;
     const price = Math.min(o.unitPrice, askPrice(state, market, o.item));

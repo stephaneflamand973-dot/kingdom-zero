@@ -10,15 +10,19 @@ import { learnEvent, logEvent } from './events';
 import { fem, greeting, refusalText } from './narrative';
 import { activeLoans, businessInTrouble, createLoan, loanTerms, ownedBusinesses, repay } from './finance';
 import { acceptOrder, activeContract, deliverOrder, resign, signContract } from './contracts';
-import { festivalTonight, serveFestivalAle } from './society';
+import { festivalAt, festivalTonight, serveFestivalAle } from './society';
+import { carryCapacity, weightOf } from './trade';
+import { buyProperty, deposit, hasAccess, leaveProperty, propertiesAt, rentProperty, withdraw } from './property';
+import { buyBusinessAsPlayer, foundAsPlayer, manage, type OwnerOrder } from './enterprise';
+import { WEIGHT } from './data';
 import { eat as eatFood } from './npc';
 import { chance, rand, randInt } from './rng';
-import { advanceTime } from './sim';
+import { advanceTime, recordPrices } from './sim';
 import { gainXp } from './skills';
 import { applyBeliefEffect, getRelation, modifyRelation, shareRumor } from './social';
 import { formatDuration, minutesUntilHour, toDate } from './time';
-import type { ActionResult, Business, Character, GameState, ItemId } from './types';
-import { charactersAt, clamp, fullName, hasTrait, isOpen, player, qty, travelMinutes } from './util';
+import type { ActionResult, Business, BusinessKind, Character, GameState, ItemId } from './types';
+import { charactersAt, clamp, fullName, hasTrait, isOpen, player, qty, travelMinutes , businessesAt, businessSettlement, settlementIdOf } from './util';
 
 const ok = (message: string, minutes: number, eventIds?: string[]): ActionResult => ({ ok: true, message, minutes, eventIds });
 const no = (message: string): ActionResult => ({ ok: false, message, minutes: 0 });
@@ -44,6 +48,7 @@ export function moveTo(state: GameState, locationId: string): ActionResult {
   p.activity = { kind: 'travel', locationId: p.locationId, since: state.time, note: `En route vers ${state.locations[locationId].name}` };
   p.locationId = locationId;
   finish(state, p, minutes);
+  recordPrices(state, settlementIdOf(state, locationId)); // on observe les étals en arrivant
   return ok(`Tu te rends à ${state.locations[locationId].name} (${formatDuration(minutes)}).`, minutes);
 }
 
@@ -72,7 +77,13 @@ export function canWork(state: GameState, b: Business, p: Character): WorkCheck 
     if (p.needs.energy < 15) return { ok: false, reason: 'Tu es trop épuisé pour travailler.', wage: k.wage, maxHours };
     return { ok: true, wage: k.wage, maxHours };
   }
-  if (b.ownerId === p.id) return { ok: false, reason: 'Ton intendant gère cette affaire ; la phase 3 te laissera la diriger toi-même.', wage, maxHours };
+  if (b.ownerId === p.id) {
+    // Travailler dans sa propre affaire : sans salaire, mais le travail produit
+    if (!isOpen(b, d.hour)) return { ok: false, reason: `${b.name} est fermé (ouvert de ${b.openFrom}h à ${b.openTo}h).`, wage: 0, maxHours };
+    if (maxHours <= 0 || p.needs.energy < 15) return { ok: false, reason: p.needs.energy < 15 ? 'Tu es trop épuisé pour travailler.' : "Assez travaillé pour aujourd'hui.", wage: 0, maxHours };
+    if (b.kind === 'market') return { ok: false, reason: 'Un comptoir ne demande pas de main-d’œuvre.', wage: 0, maxHours };
+    return { ok: true, wage: 0, maxHours };
+  }
   if (!isOpen(b, d.hour)) return { ok: false, reason: `${b.name} est fermé (ouvert de ${b.openFrom}h à ${b.openTo}h).`, wage, maxHours };
   if (maxHours <= 0) return { ok: false, reason: p.hoursWorkedToday >= 10 ? "Tu as assez travaillé aujourd'hui." : 'La journée de travail touche à sa fin.', wage, maxHours };
   if (p.needs.energy < 15) return { ok: false, reason: 'Tu es trop épuisé pour travailler.', wage, maxHours };
@@ -86,8 +97,9 @@ export function canWork(state: GameState, b: Business, p: Character): WorkCheck 
     if (r.trust <= -25 || r.affinity <= -35) return { ok: false, reason: refusalText(state, owner, "t'embaucher"), wage, maxHours };
   }
   if (b.kind === 'manor') {
-    const odon = state.characters['odon'];
-    if (odon?.alive && getRelation(state, odon.id, p.id).trust <= -25) return { ok: false, reason: refusalText(state, odon, "t'embaucher pour l'intendance"), wage, maxHours };
+    const sid = businessSettlement(state, b).stewardId;
+    const steward = sid ? state.characters[sid] : undefined;
+    if (steward?.alive && getRelation(state, steward.id, p.id).trust <= -25) return { ok: false, reason: refusalText(state, steward, "t'embaucher pour l'intendance"), wage, maxHours };
   }
   const r = RECIPES[b.kind];
   if (r) {
@@ -109,7 +121,7 @@ export function work(state: GameState, businessId: string, hours: number): Actio
   const before = p.money, unpaidBefore = p.unpaidWages;
   const skill = WORK_SKILL[b.kind];
   const skillBefore = p.skills[skill];
-  const workLoc = b.kind === 'manor' ? 'square' : b.locationId;
+  const workLoc = b.kind === 'manor' ? businessSettlement(state, b).squareId : b.locationId;
   const prevLoc = p.locationId;
   p.locationId = workLoc;
   p.activity = { kind: 'work', locationId: workLoc, targetId: b.id, since: state.time, wage: chk.wage, note: `Travaille à ${b.name}` };
@@ -142,6 +154,7 @@ export function buy(state: GameState, businessId: string, item: ItemId, n: numbe
   if (!isOpen(b, toDate(state.time).hour)) return no(`${b.name} est fermé.`);
   if (tradeRefusal(state, b, p)) return no(refusalText(state, state.characters[b.ownerId!], 'te vendre quoi que ce soit'));
   if (qty(b.stock, item) < n) return no(`Il ne reste que ${qty(b.stock, item)} ${ITEMS[item].plural}.`);
+  if (weightOf(p.inventory) + n * WEIGHT[item] > carryCapacity(p)) return no(`Ta besace est pleine (${weightOf(p.inventory)}/${carryCapacity(p)}). Range des biens dans un logement ou vends-en.`);
   const price = priceForCharacter(state, b, p, item, 'buy');
   if (p.money < price * n) return no(`Il te faut ${price * n} d, tu n'as que ${p.money} d.`);
   trade(state, P.c(p.id), P.b(b.id), item, n, price);
@@ -202,21 +215,23 @@ export function drinkAle(state: GameState): ActionResult {
   return ok('Tu bois une chope de bière.', 20);
 }
 
-export type SleepMode = 'inn' | 'barn' | 'rough';
+export type SleepMode = 'home' | 'inn' | 'barn' | 'rough';
 export const INN_BED_PRICE = 12;
 
 export function sleepOptions(state: GameState): { mode: SleepMode; label: string; ok: boolean; reason?: string }[] {
   const p = player(state);
   const loc = state.locations[p.locationId];
   const out: { mode: SleepMode; label: string; ok: boolean; reason?: string }[] = [];
-  if (loc.kind === 'tavern') {
-    const inn = state.businesses['b_tavern'];
+  const home = propertiesAt(state, loc.id).find(pr => hasAccess(pr, p));
+  if (home) out.push({ mode: 'home', label: `Dormir chez toi (${home.name})`, ok: true });
+  const inn = loc.kind === 'tavern' ? businessesAt(state, loc.id).find(b => b.kind === 'tavern') : undefined;
+  if (inn && !home) {
     const refuse = tradeRefusal(state, inn, p);
     out.push({ mode: 'inn', label: `Louer un lit (${INN_BED_PRICE} d)`, ok: !refuse && p.money >= INN_BED_PRICE,
       reason: refuse ? refusalText(state, state.characters[inn.ownerId!], 'te louer un lit') : p.money < INN_BED_PRICE ? 'Pas assez d’argent.' : undefined });
   }
-  if (loc.kind === 'farm') {
-    const farm = state.businesses['b_farm'];
+  const farm = loc.kind === 'farm' ? businessesAt(state, loc.id).find(b => b.kind === 'farm') : undefined;
+  if (farm) {
     const r = farm.ownerId ? getRelation(state, farm.ownerId, p.id) : { affinity: 0, trust: 0 };
     out.push({ mode: 'barn', label: 'Dormir dans la grange', ok: r.affinity > -10 && r.trust > -15,
       reason: r.affinity <= -10 || r.trust <= -15 ? `${farm.ownerId ? state.characters[farm.ownerId].firstName : 'Le fermier'} ne veut pas de toi dans sa grange.` : undefined });
@@ -234,16 +249,17 @@ export function sleep(state: GameState, mode: SleepMode): ActionResult {
   if (p.needs.energy >= 95) return no("Tu n'as pas sommeil.");
   const d = toDate(state.time);
   const minutes = d.hour >= 18 || d.hour < 5 ? minutesUntilHour(state.time, 6) : 4 * 60;
-  const quality = mode === 'inn' ? 1 : mode === 'barn' ? 0.75 : 0.5;
+  const quality = mode === 'inn' || mode === 'home' ? 1 : mode === 'barn' ? 0.75 : 0.5;
   let paid = '';
   if (mode === 'inn') {
-    transferMoney(state, P.c(p.id), P.b('b_tavern'), INN_BED_PRICE);
+    const inn = businessesAt(state, p.locationId).find(b => b.kind === 'tavern')!;
+    transferMoney(state, P.c(p.id), P.b(inn.id), INN_BED_PRICE);
     paid = ` (${INN_BED_PRICE} d)`;
   }
   p.activity = { kind: 'sleep', locationId: p.locationId, since: state.time, quality, note: 'Dort' };
   const e0 = p.needs.energy;
   finish(state, p, minutes);
-  const where = mode === 'inn' ? 'dans un lit de l’auberge' : mode === 'barn' ? 'dans la paille de la grange' : 'à même le sol';
+  const where = mode === 'home' ? 'chez toi' : mode === 'inn' ? 'dans un lit de l’auberge' : mode === 'barn' ? 'dans la paille de la grange' : 'à même le sol';
   return ok(`Tu dors ${formatDuration(minutes)} ${where}${paid}. Énergie ${Math.round(e0)} → ${Math.round(p.needs.energy)}.`, minutes);
 }
 
@@ -258,7 +274,7 @@ export function wait(state: GameState, minutes: number): ActionResult {
 export function train(state: GameState): ActionResult {
   const g = guard(state); if (g) return g;
   const p = player(state);
-  if (state.locations[p.locationId].kind !== 'square') return no("On s'entraîne aux armes sur la Place du Puits.");
+  if (state.locations[p.locationId].kind !== 'square') return no("On s'entraîne aux armes sur la place centrale.");
   if (p.needs.energy < 20) return no('Tu es trop fatigué pour t’entraîner.');
   const before = p.skills.combat;
   p.activity = { kind: 'train', locationId: p.locationId, since: state.time, note: 'S’entraîne au bâton' };
@@ -313,7 +329,7 @@ export function talk(state: GameState, npcId: string, kind: TalkKind): ActionRes
   switch (kind) {
     case 'chat': {
       minutes = 20;
-      let delta = (p.attributes.charisme - 5) * 0.8 + p.skills.diplomatie / 20 + (rand(state) * 5 - 1.5) + (festivalTonight(state) && state.locations[p.locationId].kind === 'tavern' ? 3 : 0);
+      let delta = (p.attributes.charisme - 5) * 0.8 + p.skills.diplomatie / 20 + (rand(state) * 5 - 1.5) + (festivalTonight(state, p.locationId) && state.locations[p.locationId].kind === 'tavern' ? 3 : 0);
       if (hasTrait(n, 'sociable')) delta += 2;
       if (hasTrait(n, 'timide')) delta -= 1;
       if (hasTrait(n, 'colerique') && chance(state, 0.2)) delta -= 4;
@@ -473,14 +489,14 @@ export function repayLoan(state: GameState, loanId: string, amount?: number): Ac
 export function feastDrink(state: GameState): ActionResult {
   const g = guard(state); if (g) return g;
   const p = player(state);
-  const tavern = state.businesses['b_tavern'];
-  if (p.locationId !== tavern.locationId) return no('La fête a lieu à l’auberge.');
-  if (!festivalTonight(state)) return no("Il n'y a pas de fête ce soir.");
+  const tavern = businessesAt(state, p.locationId).find(b => b.kind === 'tavern');
+  if (!tavern) return no('La fête a lieu à l’auberge.');
+  if (!festivalTonight(state, p.locationId)) return no("Il n'y a pas de fête ce soir.");
   if (!serveFestivalAle(state, p, tavern)) return no('Les chopes offertes sont toutes servies.');
   p.needs.hunger = clamp(p.needs.hunger - 4, 0, 100);
   for (const c of charactersAt(state, p.locationId)) if (c.activity.kind === 'socialize') modifyRelation(state, c.id, p.id, 1, 0);
   finish(state, p, 30);
-  return ok(`Tu trinques avec le village à la ${state.festival!.name.toLowerCase()}. Les convives présents te voient d'un œil plus amical.`, 30);
+  return ok(`Tu trinques avec le village à la ${festivalAt(state, tavern.locationId)!.name.toLowerCase()}. Les convives présents te voient d'un œil plus amical.`, 30);
 }
 
 export function applyForJob(state: GameState, businessId: string): ActionResult {
@@ -508,6 +524,24 @@ export function deliver(state: GameState, orderId: string): ActionResult {
   if (r.ok) finish(state, player(state), r.minutes);
   return r;
 }
+
+// ── Logements et entreprises (phase 3) ──────────────────────
+
+/** Enveloppe une action de module : le temps passe seulement si elle réussit. */
+function timed(state: GameState, fn: () => ActionResult): ActionResult {
+  const g = guard(state); if (g) return g;
+  const r = fn();
+  if (r.ok && r.minutes > 0) finish(state, player(state), r.minutes);
+  return r;
+}
+export const rentHome = (state: GameState, id: string) => timed(state, () => rentProperty(state, id));
+export const leaveHome = (state: GameState, id: string) => timed(state, () => leaveProperty(state, id));
+export const buyHome = (state: GameState, id: string) => timed(state, () => buyProperty(state, id));
+export const store = (state: GameState, id: string, item: ItemId, n: number) => timed(state, () => deposit(state, id, item, n));
+export const takeOut = (state: GameState, id: string, item: ItemId, n: number) => timed(state, () => withdraw(state, id, item, n));
+export const purchaseBusiness = (state: GameState, id: string) => timed(state, () => buyBusinessAsPlayer(state, id));
+export const ownerOrder = (state: GameState, id: string, order: OwnerOrder) => timed(state, () => manage(state, id, order));
+export const found = (state: GameState, kind: BusinessKind, capital: number) => timed(state, () => foundAsPlayer(state, kind, capital));
 
 // ── Crime ───────────────────────────────────────────────────
 

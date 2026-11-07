@@ -15,3 +15,7 @@ export * from './skills';
 export * from './finance';
 export * from './contracts';
 export * from './society';
+export * from './trade';
+export * from './property';
+export * from './territory';
+export * from './enterprise';

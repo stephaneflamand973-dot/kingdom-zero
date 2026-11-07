@@ -1,4 +1,4 @@
-import type { Business, Character, GameState, Inventory, ItemId } from './types';
+import type { Business, Character, GameState, Inventory, ItemId, Location, Road, Settlement } from './types';
 
 export const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -33,12 +33,81 @@ export function allBusinesses(state: GameState): Business[] {
   return state.businessOrder.map(id => state.businesses[id]);
 }
 
+// ── Géographie (phase 3) ─────────────────────────────────────
+
+export function settlementIdOf(state: GameState, locationId: string): string {
+  return state.locations[locationId]?.settlementId ?? 'valcendre';
+}
+export function settlementOf(state: GameState, locationId: string): Settlement {
+  const id = settlementIdOf(state, locationId);
+  return state.settlements[id] ?? state.settlements[state.settlementOrder[0]];
+}
+/** Localité de résidence d'un personnage (sa maison). */
+export function homeSettlement(state: GameState, c: Character): Settlement {
+  return settlementOf(state, c.homeId);
+}
+/** Localité où se trouve un personnage (pour un voyageur, sa localité d'attache). */
+export function hereSettlement(state: GameState, c: Character): Settlement {
+  return state.locations[c.locationId]?.kind === 'road' ? homeSettlement(state, c) : settlementOf(state, c.locationId);
+}
+export function businessSettlement(state: GameState, b: Business): Settlement {
+  return settlementOf(state, b.locationId);
+}
+export function businessesIn(state: GameState, settlementId: string): Business[] {
+  return allBusinesses(state).filter(b => settlementIdOf(state, b.locationId) === settlementId);
+}
+export function locationsIn(state: GameState, settlementId: string, kind?: Location['kind']): Location[] {
+  return state.locationOrder.map(id => state.locations[id]).filter(l => l.settlementId === settlementId && (!kind || l.kind === kind));
+}
+export function residents(state: GameState, settlementId: string): Character[] {
+  return npcs(state).filter(c => settlementIdOf(state, c.homeId) === settlementId);
+}
+export function manorOf(state: GameState, settlementId: string): Business {
+  return state.businesses[state.settlements[settlementId].manorId];
+}
+
+/** Itinéraire le plus court entre deux localités (Dijkstra sur le petit réseau routier). */
+export function roadPath(state: GameState, from: string, to: string): { hours: number; roads: Road[] } | undefined {
+  if (from === to) return { hours: 0, roads: [] };
+  const dist: Record<string, number> = { [from]: 0 };
+  const prev: Record<string, Road> = {};
+  const todo = new Set(state.settlementOrder);
+  while (todo.size) {
+    let u: string | undefined;
+    for (const v of todo) if (dist[v] !== undefined && (u === undefined || dist[v] < dist[u])) u = v;
+    if (u === undefined) break;
+    todo.delete(u);
+    if (u === to) break;
+    for (const r of state.roads) {
+      const v = r.a === u ? r.b : r.b === u ? r.a : undefined;
+      if (!v || !todo.has(v)) continue;
+      const d = dist[u] + r.hours;
+      if (dist[v] === undefined || d < dist[v]) { dist[v] = d; prev[v] = r; }
+    }
+  }
+  if (dist[to] === undefined) return undefined;
+  const roads: Road[] = [];
+  for (let v = to; v !== from;) { const r = prev[v]; roads.unshift(r); v = r.a === v ? r.b : r.a; }
+  return { hours: dist[to], roads };
+}
+
+function localMinutes(state: GameState, a: Location, b: Location): number {
+  if (a.id === b.id) return 0;
+  const d = Math.hypot(a.x - b.x, a.y - b.y);
+  const infra = state.settlements[a.settlementId]?.infrastructure ?? 50;
+  const infraFactor = 1 + (60 - infra) / 200; // chemins entretenus = trajets plus courts
+  return Math.max(5, Math.round((d / 18) * infraFactor));
+}
+
 export function travelMinutes(state: GameState, fromId: string, toId: string): number {
   if (fromId === toId) return 0;
   const a = state.locations[fromId], b = state.locations[toId];
-  const d = Math.hypot(a.x - b.x, a.y - b.y);
-  const infraFactor = 1 + (60 - state.village.infrastructure) / 200; // routes entretenues = trajets plus courts
-  return Math.max(5, Math.round((d / 18) * infraFactor));
+  if (a.kind === 'road' || b.kind === 'road') return 60;
+  if (a.settlementId === b.settlementId) return localMinutes(state, a, b);
+  const sa = state.settlements[a.settlementId], sb = state.settlements[b.settlementId];
+  const path = roadPath(state, sa.id, sb.id);
+  if (!path) return Infinity;
+  return localMinutes(state, a, state.locations[sa.squareId]) + path.hours * 60 + localMinutes(state, state.locations[sb.squareId], b);
 }
 
 export function newId(state: GameState, prefix: string): string {

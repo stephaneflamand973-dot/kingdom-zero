@@ -222,7 +222,7 @@ describe('Vengeance, rumeurs et fêtes', () => {
     advanceTime(s, minutesUntilHour(s.time, 16));
     const manor0 = s.businesses.b_manor.treasury, tavern0 = s.businesses.b_tavern.treasury;
     advanceTime(s, 60); // 17h, premier jour de la saison
-    expect(s.festival).toBeTruthy();
+    expect(s.festivals.length).toBeGreaterThan(0);
     expect(s.businesses.b_manor.treasury).toBeLessThan(manor0);
     expect(s.businesses.b_tavern.treasury).toBeGreaterThan(tavern0);
     advanceTime(s, 2 * 60);

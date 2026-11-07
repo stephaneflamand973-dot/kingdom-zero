@@ -5,11 +5,12 @@
 import { askPrice, fireEmployee, hireBest, isHiring, P, reserveFor, transferMoney } from './economy';
 import { activeLoans, businessValue, considerVengeance, createLoan, loanTerms, ownedBusinesses, transferBusiness } from './finance';
 import { getEvent, logEvent } from './events';
+import { npcFounding } from './enterprise';
 import { chance } from './rng';
 import { getRelation, modifyRelation } from './social';
 import { toDate } from './time';
-import type { Ambition, Business, Character, GameState, WorldEvent } from './types';
-import { addItem, aliveCharacters, allBusinesses, fullName, hasTrait, npcs, qty } from './util';
+import type { Ambition, Business, Character, Festival, GameState, WorldEvent } from './types';
+import { addItem, aliveCharacters, allBusinesses, businessesIn, fullName, hasTrait, manorOf, npcs, qty, residents, settlementIdOf } from './util';
 
 // ── Ambitions ────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ export function businessesForSale(state: GameState, buyer?: Character): { b: Bus
 /** Achat d'une entreprise : l'argent va au vendeur (ou au trésor du village). */
 export function buyBusiness(state: GameState, buyer: Character, b: Business, price: number): boolean {
   const seller = b.ownerId ? state.characters[b.ownerId] : undefined;
-  const to = seller ? P.c(seller.id) : P.b(state.village.manorId);
+  const to = seller ? P.c(seller.id) : P.b(manorOf(state, settlementIdOf(state, b.locationId)).id);
   if (!transferMoney(state, P.c(buyer.id), to, price)) return false;
   transferBusiness(state, b, buyer, seller);
   logEvent(state, {
@@ -86,7 +87,7 @@ export function processAmbitions(state: GameState): void {
       if (offers.length) c.ambition.target = offers[0].price;
       const deal = offers.find(o => o.seller !== c.id && o.price <= c.money)
         ?? offers.find(o => o.seller !== c.id && o.price - c.money <= 150 && c.money >= o.price * 0.6);
-      if (!deal) continue;
+      if (!deal) { npcFounding(state, c); continue; }
       if (deal.price > c.money) {
         // Emprunter le complément : risque d'une saisie future si l'affaire périclite
         const need = deal.price - c.money;
@@ -149,36 +150,48 @@ export function trySlander(state: GameState, speaker: Character, listener: Chara
 
 // ── Fête de saison ───────────────────────────────────────────
 
-/** Premier jour de chaque saison à 17 h : l'intendance offre la bière à l'auberge. */
-export function startFestival(state: GameState): void {
+/** Premier jour de chaque saison à 17 h : chaque intendance offre la bière dans sa taverne. */
+export function startFestivals(state: GameState): void {
+  for (const sid of state.settlementOrder) startFestival(state, sid);
+}
+
+export function startFestival(state: GameState, settlementId = 'valcendre'): void {
   const d = toDate(state.time);
-  const tavern = allBusinesses(state).find(b => b.kind === 'tavern');
-  const manor = state.businesses[state.village.manorId];
-  if (!tavern) return;
-  const adults = npcs(state).filter(c => c.age >= 14).length + 1;
+  const tavern = businessesIn(state, settlementId).find(b => b.kind === 'tavern');
+  const manor = manorOf(state, settlementId);
+  if (!tavern || state.festivals.some(f => f.settlementId === settlementId && f.day === d.day)) return;
+  const adults = residents(state, settlementId).filter(c => c.age >= 14).length + 1;
   const price = Math.max(1, Math.round(askPrice(state, tavern, 'ale') * 0.8));
-  const n = Math.min(adults, qty(tavern.stock, 'ale'), Math.floor(Math.max(0, manor.treasury - 250) / price));
+  const n = Math.max(0, Math.min(adults, qty(tavern.stock, 'ale'), Math.floor(Math.max(0, manor.treasury - 250) / price)));
   const name = ['Fête du Printemps', "Fête de l'Été", "Fête de l'Automne", "Fête de l'Hiver"][d.season];
   if (n > 0) transferMoney(state, P.b(manor.id), P.b(tavern.id), n * price);
-  state.festival = { day: d.day, alePaid: n, name };
+  state.festivals.push({ day: d.day, alePaid: n, name, settlementId });
   logEvent(state, {
     type: 'festival', locationId: tavern.locationId, importance: 2,
     text: n > 0
-      ? `${name} : l'intendance offre ${n} chopes au ${tavern.name}. Tout le village est invité ce soir.`
-      : `${name} : le village se réunit au ${tavern.name}, mais le trésor est trop maigre pour offrir à boire.`,
-    witnesses: aliveCharacters(state).map(c => c.id),
+      ? `${name} à ${state.settlements[settlementId].name} : l'intendance offre ${n} chopes à ${tavern.name}.`
+      : `${name} à ${state.settlements[settlementId].name} : on se réunit à ${tavern.name}, mais le trésor est trop maigre pour offrir à boire.`,
+    witnesses: residents(state, settlementId).map(c => c.id),
   });
 }
 
-export function festivalTonight(state: GameState): boolean {
+/** Fête en cours ce soir dans la localité du lieu donné (ou n'importe où si omis). */
+export function festivalAt(state: GameState, locationId?: string): Festival | undefined {
   const d = toDate(state.time);
-  return !!state.festival && state.festival.day === d.day && d.hour >= 17;
+  if (d.hour < 17) return undefined;
+  const sid = locationId ? settlementIdOf(state, locationId) : undefined;
+  return state.festivals.find(f => f.day === d.day && (!sid || f.settlementId === sid));
+}
+
+export function festivalTonight(state: GameState, locationId?: string): boolean {
+  return !!festivalAt(state, locationId);
 }
 
 /** Sert une chope payée par l'intendance. Renvoie vrai si servie. */
 export function serveFestivalAle(state: GameState, c: Character, tavern: Business): boolean {
-  if (!festivalTonight(state) || !state.festival || state.festival.alePaid <= 0 || qty(tavern.stock, 'ale') < 1) return false;
-  state.festival.alePaid -= 1;
+  const f = festivalAt(state, tavern.locationId);
+  if (!f || f.alePaid <= 0 || qty(tavern.stock, 'ale') < 1) return false;
+  f.alePaid -= 1;
   addItem(tavern.stock, 'ale', -1);
   addItem(state.ledger.consumed, 'ale', 1);
   c.needs.social = Math.min(100, c.needs.social + 20);

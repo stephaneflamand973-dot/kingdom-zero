@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import {
   activeContract, applyForJob, businessesForSale, deliver, jobOffer, openOrders, quitJob, takeOrder,
+  buyHome, carryCapacity, found, FOUNDABLE, FOUNDING_COST, hasAccess, ITEM_IDS, leaveHome, ownerOrder, propertiesAt, purchaseBusiness,
+  purchaseOffer, rentHome, RECIPES, settlementIdOf, store, takeOut, weightOf, WEIGHT, type BusinessKind, type Property,
   askPrice, businessesAt, buy, canWork, charactersAt, fullName, getRelation, isOpen, ITEMS, ITEM_ICON, moodOf,
   PROFESSION_NAMES, priceForCharacter, relationLabel, sell, steal, toDate, tradeRefusal, work, qty, outputCap,
   type Business, type GameState, type ItemId,
@@ -44,7 +46,9 @@ export function LocationPanel({ game, onTalk }: { game: Game; onTalk: (id: strin
         </div>
         <div>
           {biz.length > 0 && <h3 className="sub">Établissements</h3>}
+          {propertiesAt(state, loc.id).map(pr => <PropertyCard key={pr.id} game={game} pr={pr} />)}
           {loc.kind === 'square' && <NoticeBoard game={game} />}
+          {loc.kind === 'square' && <FoundingCard game={game} />}
           {biz.length === 0 && loc.kind !== 'square' && <p className="muted">Aucun commerce ici.</p>}
           {biz.map(b => <BusinessCard key={b.id} game={game} b={b} />)}
         </div>
@@ -121,6 +125,7 @@ function BusinessCard({ game, b }: { game: Game; b: Business }) {
       )}
 
       <ContractRow game={game} b={b} />
+      {b.ownerId === p.id ? <OwnerPanel game={game} b={b} /> : <PurchaseRow game={game} b={b} />}
 
       {stealable.length > 0 && (
         <details className="crime">
@@ -167,7 +172,7 @@ function ContractRow({ game, b }: { game: Game; b: Business }) {
           <button className="btn sm" disabled={qty(p.inventory, o.item) < 1 || over} onClick={() => act(s => deliver(s, o.id))}>Livrer</button>
         </div>
       ))}
-      {sale && <p className="muted small">À vendre : {sale.price} d {sale.seller ? `(${fullName(state.characters[sale.seller])} veut céder son affaire)` : '(sous tutelle de l’intendance)'}. Le rachat par le joueur viendra en phase 3.</p>}
+      {sale && <p className="muted small">À vendre : {sale.price} d {sale.seller ? `(${fullName(state.characters[sale.seller])} veut céder son affaire)` : '(sous tutelle de l’intendance)'}.</p>}
     </div>
   );
 }
@@ -175,7 +180,7 @@ function ContractRow({ game, b }: { game: Game; b: Business }) {
 function NoticeBoard({ game }: { game: Game }) {
   const { state, act } = game;
   const p = state.characters[state.playerId];
-  const orders = openOrders(state);
+  const orders = openOrders(state, settlementIdOf(state, p.locationId));
   const mine = state.orders.filter(o => o.status === 'taken' && o.takerId === p.id);
   return (
     <div className="board">
@@ -193,6 +198,114 @@ function NoticeBoard({ game }: { game: Game }) {
       </ul>
       {mine.length > 0 && <p className="small">Tes commandes en cours : {mine.map(o => `${o.qty - o.delivered} ${ITEMS[o.item].plural} → ${state.businesses[o.businessId].name}`).join(' ; ')}</p>}
     </div>
+  );
+}
+
+function PurchaseRow({ game, b }: { game: Game; b: Business }) {
+  const { state, act } = game;
+  const p = state.characters[state.playerId];
+  if (b.kind === 'manor') return null;
+  const o = purchaseOffer(state, b, p);
+  return (
+    <div className="work-row">
+      <div className="work-info"><strong>Racheter l'affaire</strong><span>{o.ok ? `${o.price} d${o.seller ? ` à ${fullName(state.characters[o.seller])}` : ' à l’intendance'}` : o.reason}</span></div>
+      <button className="btn sm" disabled={!o.ok || p.money < o.price || !!state.gameOver} onClick={() => act(s => purchaseBusiness(s, b.id))}>Racheter</button>
+    </div>
+  );
+}
+
+function OwnerPanel({ game, b }: { game: Game; b: Business }) {
+  const { state, act } = game;
+  const over = !!state.gameOver;
+  const outputs = b.kind === 'market' ? b.sells : (Object.keys(RECIPES[b.kind]?.outputs ?? {}) as ItemId[]);
+  return (
+    <div className="owner">
+      <div className="owner-head"><strong>Ton affaire</strong><span className="muted small">Ton contremaître achète, vend et embauche selon tes consignes.</span></div>
+      <div className="owner-grid">
+        <span>Caisse</span><b>{b.treasury} d</b>
+        <div className="slot-btns"><button className="btn sm ghost" disabled={over || b.treasury < 1} onClick={() => act(s => ownerOrder(s, b.id, { kind: 'withdraw', amount: 50 }))}>Retirer 50</button><button className="btn sm ghost" disabled={over} onClick={() => act(s => ownerOrder(s, b.id, { kind: 'deposit', amount: 50 }))}>Déposer 50</button></div>
+        <span>Salaire</span><b>{b.wage} d/h</b>
+        <div className="slot-btns"><button className="btn sm ghost" disabled={over} onClick={() => act(s => ownerOrder(s, b.id, { kind: 'wage', delta: -1 }))}>−</button><button className="btn sm ghost" disabled={over} onClick={() => act(s => ownerOrder(s, b.id, { kind: 'wage', delta: 1 }))}>+</button></div>
+        <span>Ouvriers</span><b>{b.employees.length}/{b.maxWorkers}</b>
+        <div className="slot-btns"><button className="btn sm ghost" disabled={over} onClick={() => act(s => ownerOrder(s, b.id, { kind: 'workers', delta: -1 }))}>−</button><button className="btn sm ghost" disabled={over} onClick={() => act(s => ownerOrder(s, b.id, { kind: 'workers', delta: 1 }))}>+</button></div>
+        {outputs.map(it => (
+          <FragmentRow key={it} label={`Stock visé ${ITEM_ICON[it]}`} value={`${b.targets[it] ?? 0}`}
+            minus={() => act(s => ownerOrder(s, b.id, { kind: 'target', item: it, factor: 0.75 }))}
+            plus={() => act(s => ownerOrder(s, b.id, { kind: 'target', item: it, factor: 1.33 }))} disabled={over} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FragmentRow({ label, value, minus, plus, disabled }: { label: string; value: string; minus: () => void; plus: () => void; disabled: boolean }) {
+  return (<>
+    <span>{label}</span><b>{value}</b>
+    <div className="slot-btns"><button className="btn sm ghost" disabled={disabled} onClick={minus}>−</button><button className="btn sm ghost" disabled={disabled} onClick={plus}>+</button></div>
+  </>);
+}
+
+function PropertyCard({ game, pr }: { game: Game; pr: Property }) {
+  const { state, act } = game;
+  const p = state.characters[state.playerId];
+  const mine = hasAccess(pr, p);
+  const over = !!state.gameOver;
+  const [item, setItem] = useState<ItemId>('grain');
+  const owner = pr.ownerId === p.id ? 'toi' : pr.ownerId ? fullName(state.characters[pr.ownerId]) : 'l’intendance';
+  const status = pr.ownerId === p.id ? 'Ta maison' : pr.tenantId === p.id ? `Ta location · ${pr.weeklyRent} d chaque lundi` : pr.tenantId ? 'Déjà louée' : 'Libre';
+  return (
+    <div className="biz property">
+      <div className="biz-head">
+        <div><div className="biz-name">{pr.name}</div><div className="biz-meta">{status} · propriétaire : {owner} · coffre {pr.storageCap} (poids)</div></div>
+        <div className="biz-till">{pr.price ? `${pr.price} d` : 'location'}</div>
+      </div>
+      {!mine && (
+        <div className="work-row">
+          <div className="work-info"><span>{pr.weeklyRent} d par semaine{pr.price && !pr.ownerId ? ` · à vendre ${pr.price} d` : ''}</span></div>
+          <div className="work-btns">
+            <button className="btn sm" disabled={over || !!pr.tenantId || p.money < pr.weeklyRent} onClick={() => act(s => rentHome(s, pr.id))}>Louer</button>
+            {pr.price > 0 && !pr.ownerId && <button className="btn sm" disabled={over || p.money < pr.price} onClick={() => act(s => buyHome(s, pr.id))}>Acheter</button>}
+          </div>
+        </div>
+      )}
+      {mine && (
+        <div className="storage">
+          <div className="small">Coffre : {ITEM_IDS.filter(i => qty(pr.storage, i)).map(i => `${ITEM_ICON[i]} ${qty(pr.storage, i)}`).join('  ') || 'vide'} · {weightOf(pr.storage)}/{pr.storageCap} — Besace : {weightOf(p.inventory)}/{carryCapacity(p)}</div>
+          <div className="crime-row">
+            <select id={`item-${pr.id}`} value={item} onChange={e => setItem(e.target.value as ItemId)}>
+              {ITEM_IDS.map(i => <option key={i} value={i}>{ITEMS[i].name} (poids {WEIGHT[i]})</option>)}
+            </select>
+            <button className="btn sm ghost" disabled={over || qty(p.inventory, item) < 1} onClick={() => act(s => store(s, pr.id, item, qty(p.inventory, item)))}>Tout ranger ({qty(p.inventory, item)})</button>
+            <button className="btn sm ghost" disabled={over || qty(pr.storage, item) < 1} onClick={() => act(s => takeOut(s, pr.id, item, Math.min(qty(pr.storage, item), Math.floor((carryCapacity(p) - weightOf(p.inventory)) / WEIGHT[item]))))}>Prendre</button>
+            {pr.tenantId === p.id && <button className="btn sm ghost" disabled={over} onClick={() => act(s => leaveHome(s, pr.id))}>Rendre le logement</button>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FoundingCard({ game }: { game: Game }) {
+  const { state, act } = game;
+  const p = state.characters[state.playerId];
+  const [capital, setCapital] = useState(100);
+  const names: Partial<Record<BusinessKind, string>> = { market: 'Comptoir de négoce', bakery: 'Boulangerie', tavern: 'Cabaret', forge: 'Atelier de forge' };
+  return (
+    <details className="board founding">
+      <summary className="sub">Fonder un établissement</summary>
+      <p className="muted small">L’intendance vend un terrain et fait bâtir ; le fonds de roulement part dans la caisse de la nouvelle affaire. Un comptoir achète et revend de tout : idéal pour stocker ce que tu rapportes d’ailleurs.</p>
+      <label className="small" htmlFor="capital">Fonds de roulement : <b>{capital} d</b></label>
+      <input id="capital" type="range" min={50} max={400} step={25} value={capital} onChange={e => setCapital(Number(e.target.value))} />
+      <ul className="orders">
+        {FOUNDABLE.map(k => (
+          <li key={k}>
+            <span className="ico">🏗</span>
+            <div><b>{names[k]}</b><div className="muted small">{FOUNDING_COST[k]} d de travaux + {capital} d</div></div>
+            <button className="btn sm" disabled={!!state.gameOver || p.money < (FOUNDING_COST[k] ?? 0) + capital} onClick={() => act(s => found(s, k, capital))}>Fonder</button>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
