@@ -1,7 +1,7 @@
 // Sauvegarde versionnée avec contrôle d'intégrité.
 import { checkIntegrity } from './invariants';
 import type { Festival, GameState } from './types';
-import { addRegion, SAVE_VERSION, valcendreSettlement } from './world';
+import { addPower, addRegion, SAVE_VERSION, valcendreSettlement } from './world';
 import { initialAmbition } from './society';
 
 export interface SaveFile { format: 'KINGDOM_ZERO_SAVE'; version: number; savedAt: string; checksum: string; state: GameState }
@@ -45,6 +45,16 @@ const MIGRATIONS: Record<number, (s: GameState) => GameState> = {
     s.roads = []; s.caravans = []; s.properties = []; s.priceBook = {}; s.tradeMemory = {};
     s.festivals = oldFestival ? [{ ...oldFestival, settlementId: 'valcendre' }] : [];
     addRegion(s);
+    return s;
+  },
+  // v3 → v4 (phase 4) : maisons nobles, guilde, bande, guerres, avis de recherche
+  3: s => {
+    for (const id of s.settlementOrder) {
+      const st = s.settlements[id];
+      st.lordHouseId ??= id === 'hautepierre' ? 'h_roche' : 'h_delaval';
+      st.unrest ??= 20; st.unrestWeeks ??= 0;
+    }
+    addPower(s, true);
     return s;
   },
 };

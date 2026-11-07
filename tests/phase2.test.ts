@@ -197,7 +197,9 @@ describe('Ambitions et mobilité', () => {
     s.businesses.b_farm.wage = 3;
     s.characters.agnes.traits.push('loyal');
     for (let i = 0; i < 15 && martin.employerId === 'b_farm'; i++) jobHopping(s);
-    expect(martin.employerId).toBe('b_forge');
+    // il part pour une place mieux payée (la forge, ou une autre si un concurrent l'a prise avant lui)
+    expect(martin.employerId).not.toBe('b_farm');
+    expect(s.businesses[martin.employerId!].wage).toBeGreaterThanOrEqual(3 + 2);
     expect(s.events.some(e => e.type === 'quit' && e.actorId === 'martin')).toBe(true);
   });
 });

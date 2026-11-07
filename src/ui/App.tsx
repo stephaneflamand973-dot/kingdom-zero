@@ -3,6 +3,7 @@ import { moveTo } from '../engine';
 import { ActionPanel } from './ActionPanel';
 import { LocationPanel } from './LocationPanel';
 import { NpcDialog } from './NpcDialog';
+import { EncounterModal } from './EncounterModal';
 import { SaveMenu } from './SaveMenu';
 import { SidePanels } from './SidePanels';
 import { TopBar } from './TopBar';
@@ -27,7 +28,8 @@ export function App() {
           <SidePanels game={game} onTalk={setTalkTo} />
         </div>
       </main>
-      {talkTo && <NpcDialog game={game} npcId={talkTo} onClose={() => setTalkTo(null)} />}
+      {state.encounter && !state.gameOver && <EncounterModal game={game} />}
+      {talkTo && !state.encounter && <NpcDialog game={game} npcId={talkTo} onClose={() => setTalkTo(null)} />}
       {menu && <SaveMenu game={game} onClose={() => setMenu(false)} />}
       {state.gameOver && (
         <div className="modal-back">

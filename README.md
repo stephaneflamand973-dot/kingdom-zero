@@ -1,4 +1,4 @@
-# KINGDOM ZERO — Phase 3 (v0.3.0)
+# KINGDOM ZERO — Phase 4 (v0.4.0)
 
 Simulation de vie médiévale / RPG sandbox systémique. Le **pays de Valcendre** vit sans le joueur :
 trois localités reliées par des routes, environ 48 habitants qui travaillent, achètent, mangent, se lient
@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 47 tests automatisés (scénarios A–G, phases 2 et 3, invariants) |
+| `npm test` | 62 tests automatisés (scénarios A–G, phases 2 à 4, invariants) |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
 | `npm run demo` | partie scriptée de bout en bout, affichée dans le terminal |
 | `npm run sim -- 224 42` | simulation headless : 224 jours, graine 42, bilan économique |
@@ -54,6 +54,12 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
   property.ts      logements : location, achat, coffre, loyers, expulsion (phase 3)
   enterprise.ts    rachat et gestion d’entreprise par le joueur, fondations (phase 3)
   territory.ts     prospérité des localités, relevés hebdomadaires, déménagements (phase 3)
+  orgs.ts          organisations : maisons, guilde, bande ; rôles, succession, dissolution (phase 4)
+  combat.ts        combat au tour par tour, blessures, issue mortelle ou non (phase 4)
+  gangs.ts         brigandage : recrutement secret, embuscades, racket, saccage, recel (phase 4)
+  justice.ts       avis de recherche, primes, arrestations, prison (phase 4)
+  nobility.ts      tribut, garnison, impôts, grogne, révoltes, diplomatie, guerre, complots (phase 4)
+  playerPower.ts   embuscades et arrestations du joueur, requêtes au seigneur, patrouilles (phase 4)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
 tests/             Vitest
 scripts/           demo et simulation headless
@@ -166,6 +172,56 @@ monétaire et bilan matière exacts.
 Format de sauvegarde v3 ; les sauvegardes v1 et v2 sont migrées automatiquement (testé) — une partie
 v2 voit s'ouvrir les routes vers les deux bourgs.
 
+## Phase 4 — pouvoir et conflits
+
+**Organisations.** Deux maisons nobles (Delaval tient Valcendre et Saint-Aubin, la Maison de Roche tient
+Hautepierre), la Guilde des marchands de la Loue et une bande, les Loups de la Combe. Chacune a un chef,
+des membres avec un rôle, un trésor, une réserve de biens et des relations. À la mort du chef, l'héritier
+ou le membre le plus apte lui succède ; sans successeur, l'organisation disparaît.
+
+**Combat au tour par tour.** Compétence, force, agilité, santé et nombre comptent. Les coups retirent de
+vrais points de vie ; un combattant à terre peut mourir. Le même moteur résout les embuscades, les
+arrestations, les batailles et les attentats.
+
+**Brigands.** La bande recrute en secret des désespérés malhonnêtes (seuls ses membres le savent), tend des
+embuscades aux caravanes et aux voyageurs sur les routes qui partent de son repaire, rançonne les commerces
+et saccage ceux qui refusent, puis écoule son butin chez un receleur et partage le trésor. Si le danger
+devient trop grand (avis de recherche, patrouilles), elle se terre. Le joueur pris en embuscade choisit
+à chaque tour : se battre, fuir, parlementer, payer ou se rendre. Un bandit reconnu est recherché.
+
+**Justice.** Les autorités n'agissent que sur ce qu'elles savent : un vol sans témoin reste impuni, un
+voleur surpris qui s'enfuit devient recherché, une victime qui a reconnu son agresseur porte plainte.
+Gardes et soldats en service arrêtent les recherchés qu'ils croisent (combat non mortel), la prison dure
+des jours, le geôlier achète le pain des prisonniers. Le joueur recherché est interpellé : se rendre,
+corrompre (si aucun garde n'est honnête), fuir ou résister.
+
+**Gouvernement.** Chaque semaine, 40 % des impôts remontent à la maison seigneuriale, qui paie ses soldats
+(ils désertent sans solde), recrute selon la menace (brigands connus, guerre), envoie des patrouilles sur
+les routes infestées, secourt ses localités affamées (sauf un seigneur avare), et ajuste l'impôt selon son
+trésor et la grogne. La grogne se calcule sur des faits : faim, impôt, crimes du mois, pauvreté, guerre.
+Deux semaines de forte grogne déclenchent une révolte : l'impôt n'est plus perçu pendant deux semaines.
+
+**Diplomatie et guerre.** Les relations entre maisons évoluent selon le caractère des seigneurs. Une maison
+rancunière, menée par un chef ambitieux ou colérique et nettement plus forte, déclare la guerre pour une
+localité voisine. Une bataille par semaine, avec de vrais morts ; deux victoires de l'assaillant valent
+conquête (le tribut change de maître), sinon la paix est signée avec une indemnité.
+
+**Complots.** Un héritier ambitieux et sans scrupule peut payer la bande pour faire assassiner son seigneur.
+Si un assassin est capturé, il avoue : le complot devient public et l'héritier est recherché.
+
+**Pour le joueur.** Parler à un seigneur permet de demander le titre d'écuyer (avoir fait ses preuves, ou
+payer des droits), puis une charge de conseiller (influence réelle sur l'impôt et la paix), de s'engager
+dans la garnison (solde si 12 heures de patrouille par semaine ; en patrouille, on arrête les recherchés et
+on touche la prime) et de dénoncer les crimes dont on a connaissance. L'onglet Pouvoir montre les avis de
+recherche, les maisons, la grogne, les guerres, la guilde, et des bandes seulement ce que ton personnage en sait.
+
+Sur 224 jours simulés sans le joueur (6 graines) : 9 à 11 décès pour environ 52 habitants, 2 à 7
+embuscades, une trentaine de rackets, 1 à 8 emprisonnements, 1 à 5 successions ; un complot contre
+Guérin Delaval (graine 7). Aucune guerre ni révolte n'éclate spontanément sur ces graines : la Maison de
+Roche, la plus belliqueuse, est aussi la plus pauvre. Les tests les déclenchent en forçant les conditions.
+
+Format de sauvegarde v4 ; les sauvegardes v1 à v3 sont migrées automatiquement (testé).
+
 ## État réel du développement
 
 ### Implémenté et testé
@@ -190,7 +246,7 @@ v2 voit s'ouvrir les routes vers les deux bourgs.
   lui-même, dans la limite de sa charge.
 - Les PNJ peuvent fonder une affaire, mais les conditions (épargne, pénurie locale) sont rarement réunies :
   aucune fondation spontanée sur les simulations de référence.
-- Niveaux de détail : les ~48 PNJ sont tous simulés finement à l’heure (environ 13 ms par jour simulé, mesuré) ;
+- Niveaux de détail : les ~48 PNJ sont tous simulés finement à l’heure (environ 13 ms par jour simulé avec ~52 habitants, mesuré) ;
   une simulation allégée des localités lointaines viendra avec une carte plus vaste.
 - Combat : uniquement une riposte physique à l’insulte ; pas de combat au tour par tour.
 - Création de personnage : profil adulte équilibré fixe (choix prévu par la consigne pour la v1).
@@ -198,7 +254,7 @@ v2 voit s'ouvrir les routes vers les deux bourgs.
   jour simulé mesurés) ; la simulation simplifiée des PNJ secondaires viendra avec plusieurs villages.
 
 ### Prévu (phases suivantes)
-Caravanes du joueur, brigandage sur les routes ; organisations, criminalité structurée, noblesse ; familles, naissances,
+Caravanes et escortes du joueur ; adhésion du joueur à une bande ; armes et armures ; organisations, criminalité structurée, noblesse ; familles, naissances,
 héritage du joueur ; combat au tour par tour ; intégration optionnelle d’un modèle de langage pour
 les dialogues (le moteur restera l’autorité sur les faits).
 
@@ -214,4 +270,10 @@ les dialogues (le moteur restera l’autorité sur les faits).
 - Les marchands s'endettent souvent et finissent saisis par leurs créanciers : leurs expéditions sont
   risquées, et la même histoire se répète d'une partie à l'autre.
 - Les chemins se dégradent encore plus vite que l'intendance ne les répare.
+- Guerres et révoltes sont possibles mais rares : les conditions (rancune, supériorité, grogne durable) se
+  réunissent peu souvent en deux ans simulés.
+- Le joueur ne peut pas encore lever ses propres troupes, rejoindre la bande ni prendre part à une bataille.
+- Pas d'armes ni d'armures : la force d'un combattant ne dépend que de lui.
+- Une famine au milieu de l'abondance reste possible quand plus personne n'embauche : l'aumône seigneuriale
+  et la soupe populaire en limitent les effets.
 - Pas de son ni d’animations au-delà des transitions CSS.

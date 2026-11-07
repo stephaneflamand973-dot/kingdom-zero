@@ -231,6 +231,7 @@ export function processCaravans(state: GameState): void {
   for (const id of state.characterOrder) {
     const c = state.characters[id];
     if (!c.alive || c.isPlayer || c.activity.kind !== 'travel' || !c.activity.until || c.activity.until > state.time) continue;
+    if ((c.jailedUntil ?? 0) > state.time) continue;
     if (state.caravans.some(v => v.status === 'en_route' && v.merchantId === c.id)) continue;
     const to = c.activity.targetId ?? c.homeId;
     c.locationId = to;

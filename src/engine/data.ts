@@ -65,7 +65,7 @@ export const TRAIT_NAMES: Record<TraitId, string> = {
 export const PROFESSION_NAMES: Record<ProfessionId, string> = {
   fermier: 'Fermier', bucheron: 'Bûcheron', mineur: 'Mineur', boulanger: 'Boulanger',
   aubergiste: 'Aubergiste', forgeron: 'Forgeron', marchand: 'Marchand', garde: 'Garde',
-  intendant: 'Intendant', journalier: 'Journalier', sans_emploi: 'Sans emploi',
+  intendant: 'Intendant', journalier: 'Journalier', sans_emploi: 'Sans emploi', soldat: 'Soldat', seigneur: 'Seigneur',
 };
 export const PROFESSION_BY_BUSINESS: Record<BusinessKind, ProfessionId> = {
   farm: 'fermier', woodlot: 'bucheron', mine: 'mineur', bakery: 'boulanger', tavern: 'aubergiste',

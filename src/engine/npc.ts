@@ -9,6 +9,7 @@ import { attemptTheft } from './crime';
 import { askPrice, hireBest, isHiring, outputCap, P, priceForCharacter, sellersOf, trade, tradeRefusal, transferItem, transferMoney } from './economy';
 import { toDate } from './time';
 import { friendlyLoan } from './finance';
+import { orgsOf } from './orgs';
 import { festivalAt, festivalTonight, serveFestivalAle } from './society';
 import { logEvent } from './events';
 import { chance } from './rng';
@@ -57,6 +58,7 @@ interface Option { score: number; run: () => void }
 
 export function npcDecide(state: GameState, c: Character, hour: number, weekday: number): void {
   if (!c.alive || c.isPlayer) return;
+  if ((c.jailedUntil ?? 0) > state.time) return; // en prison : rien à décider
   // En voyage (caravane) : le trajet occupe la personne jusqu'à l'arrivée
   if (c.activity.kind === 'travel' && (c.activity.until ?? 0) > state.time) {
     if (c.needs.hunger >= 40) eat(state, c); // on mange ses provisions en chemin
@@ -79,6 +81,17 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
     if (n.energy < 15) s = Math.max(s, 85);
     if (c.sick > 0 && !night) s = Math.max(s, 60);
     if (s > 0) opts.push({ score: s, run: () => setActivity(state, c, 'sleep', c.homeId, c.sick > 0 ? 'Malade, il garde le lit' : 'Dort chez soi') });
+  }
+
+  // Soldat : patrouille sur la place, ou sur une route infestée de brigands
+  if (c.profession === 'soldat' && !night && hour >= 8 && hour < 20 && n.energy > 15 && n.hunger < 90) {
+    const house = orgsOf(state, c.id, 'house')[0];
+    if (house && c.hoursWorkedToday < 8) {
+      const roads = house.patrolRoads;
+      const onRoad = roads.length > 0 && (hour + c.id.length) % 3 === 0;
+      const loc = onRoad ? roads[hour % roads.length] : home.squareId;
+      opts.push({ score: 72, run: () => { setActivity(state, c, 'patrol', loc, onRoad ? `Patrouille sur ${state.locations[loc].name}` : `Monte la garde (${state.locations[loc].name})`); c.hoursWorkedToday += 1; } });
+    }
   }
 
   // Travailler
@@ -124,13 +137,13 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
   }
 
   // Chercher du travail (plutôt le matin)
-  if (!job && !night && !sunday && hour >= 7 && hour < 17 && c.age < 70) {
+  if (!job && !night && !sunday && hour >= 7 && hour < 17 && c.age < 70 && c.profession !== 'seigneur' && c.profession !== 'soldat') {
     const s = 50 + (hour < 10 ? 10 : 0) + (hasTrait(c, 'ambitieux') ? 10 : 0) - (hasTrait(c, 'paresseux') ? 15 : 0);
     opts.push({ score: s, run: () => seekJob(state, c) });
   }
 
   // Ramasser du bois mort : le gagne-pain des démunis
-  if (!job && !night && hour >= 7 && hour < 18 && c.money < 60 && c.age < 72 && n.energy > 20) {
+  if (!job && !night && hour >= 7 && hour < 18 && c.money < 60 && c.age < 72 && n.energy > 20 && c.profession !== 'seigneur' && c.profession !== 'soldat') {
     const s = 52 + (c.money < 15 ? 12 : 0) - (hasTrait(c, 'paresseux') ? 10 : 0);
     const wood = locationsIn(state, home.id, 'woodlot')[0]?.id ?? home.squareId;
     opts.push({ score: s, run: () => setActivity(state, c, 'forage', wood, 'Ramasse du bois mort en lisière') });

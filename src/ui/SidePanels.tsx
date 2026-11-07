@@ -1,17 +1,17 @@
 import { useState } from 'react';
 import {
   toDate, residents, businessesIn, settlementIdOf, aliveCharacters, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
-  activeContract, activeLoans, ambitionLabel, quitJob, repayLoan, reputationTags,
+  activeContract, activeLoans, ambitionLabel, quitJob, repayLoan, reputationTags, orgList, landsOf, soldiersOf,
   moodOf, PROFESSION_NAMES, qty, referencePrice, relationLabel, reputation, reputationLabel, SKILL_NAMES, xpForNextLevel,
   type AttrId, type GameState, type ItemId, type SkillId, type WorldEvent,
 } from '../engine';
 import { ACTIVITY_COLOR } from './VillageMap';
 import type { Game } from './useGame';
 
-type Tab = 'perso' | 'inv' | 'affaires' | 'rel' | 'journal' | 'monde';
+type Tab = 'perso' | 'inv' | 'affaires' | 'rel' | 'journal' | 'monde' | 'pouvoir';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'perso', label: 'Personnage' }, { id: 'inv', label: 'Besace' }, { id: 'affaires', label: 'Affaires' }, { id: 'rel', label: 'Relations' },
-  { id: 'journal', label: 'Journal' }, { id: 'monde', label: 'Monde' },
+  { id: 'journal', label: 'Journal' }, { id: 'monde', label: 'Monde' }, { id: 'pouvoir', label: 'Pouvoir' },
 ];
 
 export function SidePanels({ game, onTalk }: { game: Game; onTalk: (id: string) => void }) {
@@ -29,6 +29,7 @@ export function SidePanels({ game, onTalk }: { game: Game; onTalk: (id: string) 
         {tab === 'rel' && <Rel state={state} onTalk={onTalk} />}
         {tab === 'journal' && <Journal state={state} />}
         {tab === 'monde' && <Monde state={state} />}
+        {tab === 'pouvoir' && <Pouvoir state={state} />}
       </div>
     </section>
   );
@@ -49,7 +50,7 @@ function Perso({ state }: { state: GameState }) {
         <div><h3>{fullName(p)}</h3><div className="muted">{p.age} ans · {PROFESSION_NAMES[p.profession]} · {moodOf(p)}</div></div>
         <div className="rep"><div className="tb-sub">Réputation</div><strong>{reputationLabel(rep.score, rep.known)}</strong><div className="muted small">{rep.known} personne{rep.known > 1 ? 's' : ''} te connaissent</div></div>
       </div>
-      <p className="goal">🎯 {GOALS[p.goal.kind]}</p>
+      <p className="goal">🎯 {GOALS[p.goal.kind]}{p.title ? ` · ${p.title === 'ecuyer' ? 'Écuyer' : 'Conseiller'}` : ''}</p>
       {tags.length > 0 && (
         <div className="tags" title="Ce que les habitants savent de toi, et combien le savent">
           {tags.map(t => <span key={t.tag} className={`tag ${t.good ? 'good' : 'bad'}`}>{t.tag} · {t.known}</span>)}
@@ -233,7 +234,7 @@ function Spark({ values }: { values: number[] }) {
 function Monde({ state }: { state: GameState }) {
   const p = state.characters[state.playerId];
   const [view, setView] = useState<'habitants' | 'economie' | 'prix'>('habitants');
-  const [sid, setSid] = useState<string>(settlementIdOf(state, p.locationId));
+  const [sid, setSid] = useState<string>(state.settlements[settlementIdOf(state, p.locationId)] ? settlementIdOf(state, p.locationId) : state.settlementOrder[0]);
   const st = state.settlements[sid];
   const pop = residents(state, sid);
   const manor = state.businesses[st.manorId];
@@ -263,7 +264,7 @@ function Monde({ state }: { state: GameState }) {
             <li key={c.id}>
               <i style={{ background: ACTIVITY_COLOR[c.activity.kind] }} />
               <div><b>{fullName(c)}</b> <span className="muted small">{PROFESSION_NAMES[c.profession]}, {c.age} ans · {moodOf(c)}</span>
-                <div className="small">{c.activity.note} — <span className="muted">{state.locations[c.locationId].name}</span></div>
+                <div className="small">{c.activity.kind === 'ambush' ? 'Absent' : c.activity.note} — <span className="muted">{c.activity.kind === 'ambush' ? '?' : state.locations[c.locationId].name}</span></div>
                 <div className="small muted">Ambition : {ambitionLabel(state, c)}</div></div>
             </li>
           ))}
@@ -301,6 +302,62 @@ function Monde({ state }: { state: GameState }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function Pouvoir({ state }: { state: GameState }) {
+  const p = state.characters[state.playerId];
+  const houses = orgList(state, 'house');
+  const known = p.knownEvents.map(id => getEvent(state, id)).filter((e): e is WorldEvent => !!e);
+  const gangIds = new Set(known.filter(e => (e.type === 'ambush' || e.type === 'racket' || e.type === 'vandalism' || e.type === 'recruit') && e.data?.gang).map(e => String(e.data!.gang)));
+  // un brigand rencontré sur la route révèle aussi l'existence de sa bande
+  for (const o of orgList(state, 'gang')) if (known.some(e => e.type === 'ambush' && e.targetId === p.id)) gangIds.add(o.id);
+  const myOrgs = orgList(state).filter(o => o.members.includes(p.id));
+  return (
+    <div className="pouvoir">
+      {myOrgs.length > 0 && <p className="goal">Ton rang : {myOrgs.map(o => `${({ seigneur: 'seigneur', heritier: 'héritier', soldat: 'soldat', vassal: 'vassal', conseiller: 'conseiller', chef: 'chef', membre: 'membre' } as Record<string, string>)[o.roles[p.id]]} de ${o.name}`).join(', ')}</p>}
+      <h4>Avis de recherche</h4>
+      {state.wanted.length === 0 && <p className="muted small">Personne n’est recherché.</p>}
+      <ul className="rel-list">
+        {state.wanted.map(w => (
+          <li key={w.characterId}><div className="rel-row-head"><b className={w.characterId === p.id ? 'ko' : ''}>{w.characterId === p.id ? 'Toi' : fullName(state.characters[w.characterId])}</b><span>{w.bounty} d</span></div>
+            <div className="muted small">{w.reason} · {state.orgs[w.houseId].name}</div></li>
+        ))}
+      </ul>
+      <h4>Maisons nobles</h4>
+      {houses.map(h => {
+        const lord = h.leaderId ? state.characters[h.leaderId] : undefined;
+        const heir = h.members.map(id => state.characters[id]).find(c => c?.alive && h.roles[c.id] === 'heritier');
+        const lands = landsOf(state, h);
+        return (
+          <div key={h.id} className="house">
+            <div className="rel-row-head"><b>{h.name}</b><span>{h.treasury} d</span></div>
+            <div className="small">{lord ? `${lord.sex === 'F' ? 'Dame' : 'Sire'} ${fullName(lord)}` : 'Sans seigneur'}{heir ? ` · héritier : ${fullName(heir)}` : ''} · {soldiersOf(state, h).length} hommes d'armes</div>
+            <ul className="lands">
+              {lands.map(st => (
+                <li key={st.id}>{st.name} — impôt {Math.round(st.taxRate * 100)} % · grogne <b className={st.unrest >= 60 ? 'ko' : ''}>{st.unrest}</b>{(st.revoltUntilDay ?? -1) >= toDate(state.time).day ? ' · en révolte' : ''}</li>
+              ))}
+            </ul>
+            <div className="muted small">{Object.entries(h.relations).map(([id, v]) => `${state.orgs[id]?.name} : ${v > 20 ? 'amitié' : v > -20 ? 'neutralité' : v > -60 ? 'hostilité' : 'haine'} (${v})`).join(' · ')}</div>
+          </div>
+        );
+      })}
+      <h4>Guerres</h4>
+      {state.wars.length === 0 && <p className="muted small">La région est en paix.</p>}
+      {state.wars.map(w => (
+        <p key={w.id} className="small">{w.status === 'active' ? '⚔' : '🕊'} {state.orgs[w.attackerId].name} contre {state.orgs[w.defenderId].name} pour {state.settlements[w.targetSettlementId].name} — {w.status === 'active' ? `${w.victories.attacker}–${w.victories.defender} après ${w.battles} bataille${w.battles > 1 ? 's' : ''}` : w.outcome}</p>
+      ))}
+      <h4>Guildes</h4>
+      {orgList(state, 'guild').map(g => (
+        <p key={g.id} className="small"><b>{g.name}</b> · {g.members.map(id => state.characters[id]?.firstName).filter(Boolean).join(', ')} · caisse {g.treasury} d · cotisation {g.dues} d/sem.</p>
+      ))}
+      <h4>Bandes</h4>
+      {gangIds.size === 0 && <p className="muted small">Tu n’as entendu parler d’aucune bande organisée.</p>}
+      {[...gangIds].map(id => state.orgs[id]).filter(Boolean).map(g => {
+        const suspects = [...new Set(known.filter(e => e.data?.gang === g.id || e.type === 'recruit').map(e => e.actorId).filter((x): x is string => !!x && g.members.includes(x)))];
+        return <p key={g.id} className="small"><b>{g.dissolved ? `${g.name} (dispersée)` : 'Une bande sévit sur les routes'}</b>{suspects.length ? ` · membres connus : ${suspects.map(x => fullName(state.characters[x])).join(', ')}` : ' · membres inconnus'}</p>;
+      })}
     </div>
   );
 }

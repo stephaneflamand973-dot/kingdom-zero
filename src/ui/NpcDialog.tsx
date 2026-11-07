@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  houseLedBy, petition, orgsOf, wantedFor, type PetitionKind,
   activeLoans, ambitionLabel, askLoan, businessInTrouble, canTalk, employerOf, fullName, getRelation, greeting, lendMoney, loanTerms,
   moodOf, ownedBusinesses, PROFESSION_NAMES, qty, relationLabel, talk, TRAIT_NAMES, type TalkKind,
 } from '../engine';
@@ -74,6 +75,7 @@ export function NpcDialog({ game, npcId, onClose }: { game: Game; npcId: string;
                 );
               })}
             </div>
+            {houseLedBy(state, n.id) && <LordRequests game={game} lordId={n.id} run={run} />}
             <h3 className="dialog-sub">Argent</h3>
             <div className="talk-grid">
               {[20, 50, 100].map(amount => {
@@ -95,5 +97,31 @@ export function NpcDialog({ game, npcId, onClose }: { game: Game; npcId: string;
         )}
       </div>
     </div>
+  );
+}
+
+function LordRequests({ game, lordId, run }: { game: Game; lordId: string; run: (fn: Parameters<Game['act']>[0]) => void }) {
+  const { state } = game;
+  const p = state.characters[state.playerId];
+  const house = houseLedBy(state, lordId)!;
+  const soldier = orgsOf(state, p.id, 'house').some(h => h.roles[p.id] === 'soldat');
+  const reqs: { k: PetitionKind; label: string; hint: string; show: boolean }[] = [
+    { k: 'ecuyer', label: 'Demander à être fait écuyer', hint: 'combat 25 et son estime, ou 200 d', show: !p.title },
+    { k: 'conseiller', label: 'Demander une charge de conseiller', hint: 'écuyer, affinité 35, confiance 30', show: p.title === 'ecuyer' },
+    { k: 'enlist', label: 'S’engager dans la garnison', hint: '40 d/sem. pour 12 h de patrouille', show: !soldier },
+    { k: 'denounce', label: 'Dénoncer les crimes connus', hint: 'avis de recherche', show: true },
+    { k: 'lower_tax', label: 'Conseiller de baisser l’impôt', hint: 'ici', show: p.title === 'conseiller' },
+    { k: 'raise_tax', label: 'Conseiller de relever l’impôt', hint: 'ici', show: p.title === 'conseiller' },
+    { k: 'peace', label: 'Conseiller la paix', hint: 'en temps de guerre', show: p.title === 'conseiller' },
+  ];
+  return (
+    <>
+      <h3 className="dialog-sub">Requêtes à {house.name}{wantedFor(state, p.id) ? ' — tu es recherché' : ''}</h3>
+      <div className="talk-grid">
+        {reqs.filter(r => r.show).map(r => (
+          <button key={r.k} className="btn ghost" disabled={!!state.gameOver} onClick={() => run(s => petition(s, lordId, r.k))}>{r.label}<small>{r.hint}</small></button>
+        ))}
+      </div>
+    </>
   );
 }

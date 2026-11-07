@@ -15,7 +15,9 @@ export function LocationPanel({ game, onTalk }: { game: Game; onTalk: (id: strin
   const { state } = game;
   const p = state.characters[state.playerId];
   const loc = state.locations[p.locationId];
-  const people = charactersAt(state, loc.id);
+  // des brigands en embuscade ne se laissent pas identifier
+  const people = charactersAt(state, loc.id).filter(c => c.activity.kind !== 'ambush');
+  const masked = charactersAt(state, loc.id).length - people.length;
   const biz = businessesAt(state, loc.id);
   return (
     <section className="panel location-panel">
@@ -26,7 +28,8 @@ export function LocationPanel({ game, onTalk }: { game: Game; onTalk: (id: strin
       <div className="loc-grid">
         <div>
           <h3 className="sub">Personnes présentes <span className="count">{people.length}</span></h3>
-          {people.length === 0 && <p className="muted">Il n'y a personne ici pour l'instant.</p>}
+          {masked > 0 && <p className="warn">{masked} silhouette{masked > 1 ? 's' : ''} masquée{masked > 1 ? 's' : ''}.</p>}
+          {people.length === 0 && !masked && <p className="muted">Il n'y a personne ici pour l'instant.</p>}
           <div className="people">
             {people.map(c => {
               const r = getRelation(state, c.id, p.id);

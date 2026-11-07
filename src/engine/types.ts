@@ -19,7 +19,7 @@ export type TraitId =
 
 export type ProfessionId =
   | 'fermier' | 'bucheron' | 'mineur' | 'boulanger' | 'aubergiste'
-  | 'forgeron' | 'marchand' | 'garde' | 'intendant' | 'journalier' | 'sans_emploi';
+  | 'forgeron' | 'marchand' | 'garde' | 'intendant' | 'journalier' | 'sans_emploi' | 'soldat' | 'seigneur';
 
 export type LocationKind = 'square' | 'farm' | 'market' | 'tavern' | 'forge' | 'bakery' | 'woodlot' | 'mine' | 'houses' | 'manor' | 'road';
 
@@ -47,7 +47,7 @@ export interface Needs {
 
 export type ActivityKind =
   | 'sleep' | 'work' | 'eat' | 'shop' | 'socialize' | 'manage'
-  | 'idle' | 'seekJob' | 'patrol' | 'travel' | 'talk' | 'train' | 'forage' | 'dead';
+  | 'idle' | 'seekJob' | 'patrol' | 'travel' | 'talk' | 'train' | 'forage' | 'dead' | 'jailed' | 'ambush';
 
 export interface Activity {
   kind: ActivityKind;
@@ -106,6 +106,8 @@ export interface Character {
   forageProgress: number;  // fraction de fagot ramassé
   ambition: Ambition;
   jobSince?: number;      // jour d'embauche dans l'emploi actuel
+  title?: 'ecuyer' | 'conseiller'; // titre accordé par un seigneur (phase 4)
+  jailedUntil?: number;   // minute de libération
 }
 
 export type BusinessKind = 'farm' | 'woodlot' | 'mine' | 'bakery' | 'tavern' | 'forge' | 'market' | 'manor';
@@ -152,7 +154,9 @@ export type EventType =
   | 'inheritance' | 'production' | 'refusal' | 'chat' | 'help' | 'cold' | 'spoilage'
   | 'loan' | 'loan_repaid' | 'default' | 'seizure' | 'sale' | 'contract' | 'contract_warning'
   | 'work_praise' | 'order_posted' | 'order_done' | 'order_failed' | 'slander' | 'festival' | 'rivalry'
-  | 'caravan' | 'founding' | 'move' | 'rent' | 'eviction' | 'property';
+  | 'caravan' | 'founding' | 'move' | 'rent' | 'eviction' | 'property'
+  | 'ambush' | 'racket' | 'vandalism' | 'recruit' | 'arrest' | 'jail' | 'bounty' | 'tribute' | 'tax_change'
+  | 'revolt' | 'war' | 'battle' | 'conquest' | 'peace' | 'plot' | 'assassination' | 'succession' | 'title' | 'combat' | 'diplomacy';
 
 export interface WorldEvent {
   id: string;
@@ -216,6 +220,62 @@ export interface SupplyOrder {
   status: 'open' | 'taken' | 'done' | 'failed' | 'expired';
 }
 
+// ── Phase 4 : pouvoir et conflits ───────────────────────────
+
+export type OrgKind = 'house' | 'guild' | 'gang';
+export type OrgRole = 'seigneur' | 'heritier' | 'soldat' | 'vassal' | 'conseiller' | 'chef' | 'membre';
+
+/** Organisation : maison noble, guilde ou bande. Membres, chef, trésor, réserve et relations réels. */
+export interface Organization {
+  id: string;
+  name: string;
+  kind: OrgKind;
+  leaderId: string | null;
+  members: string[];
+  roles: Record<string, OrgRole>;
+  treasury: number;
+  stash: Inventory;
+  seatId: string;                     // localité du siège
+  founded: number;
+  dissolved?: number;
+  relations: Record<string, number>;  // autre organisation → -100..100
+  heat: number;                       // bandes : notoriété auprès des autorités ; maisons : menace perçue
+  dues: number;                       // cotisation hebdomadaire (guildes) / solde hebdomadaire (soldats)
+  hideoutId?: string;                 // bandes : repaire
+  patrolRoads: string[];              // maisons : routes patrouillées
+  service: Record<string, number>;    // heures de service de la semaine (soldats)
+}
+
+export interface War {
+  id: string;
+  attackerId: string;
+  defenderId: string;
+  targetSettlementId: string;
+  startDay: number;
+  victories: { attacker: number; defender: number };
+  battles: number;
+  status: 'active' | 'ended';
+  outcome?: string;
+}
+
+/** Avis de recherche : un fait connu des autorités, une prime. */
+export interface Wanted { characterId: string; houseId: string; reason: string; bounty: number; sinceDay: number }
+
+/** Rencontre en cours pour le joueur (embuscade, arrestation) : combat au tour par tour. */
+export interface Encounter {
+  kind: 'bandits' | 'arrest';
+  enemies: string[];
+  hp: Record<string, number>;
+  demand: number;
+  orgId?: string;
+  houseId?: string;
+  destination?: string;
+  remainingMinutes: number;
+  roadId?: string;
+  log: string[];
+  round: number;
+}
+
 export interface Festival { day: number; alePaid: number; name: string; settlementId: string }
 
 /** Localité de la région (phase 3) : son intendance, ses routes, sa prospérité. */
@@ -232,6 +292,10 @@ export interface Settlement {
   yields: Partial<Record<BusinessKind, number>>; // spécialisation : multiplicateurs de rendement
   specialty: string;
   prosperity: number;            // 0..100, recalculée chaque semaine
+  lordHouseId: string;           // maison noble qui tient la localité (phase 4)
+  unrest: number;                // grogne 0..100
+  unrestWeeks: number;           // semaines consécutives de forte grogne
+  revoltUntilDay?: number;       // révolte : l'impôt n'est plus perçu
   popCap: number;                // au-delà, les migrants ne s'installent plus
   history: SettlementSnapshot[];
 }
@@ -251,6 +315,7 @@ export interface Caravan {
   arriveTime: number;
   status: 'en_route' | 'arrived';
   returning: boolean;
+  ambushed?: boolean;            // déjà attaquée pendant ce trajet (phase 4)
 }
 
 /** Logement : à louer ou à vendre, avec un coffre. */
@@ -321,6 +386,11 @@ export interface GameState {
   contracts: JobContract[];
   orders: SupplyOrder[];
   festivals: Festival[];
+  orgs: Record<string, Organization>;
+  orgOrder: string[];
+  wars: War[];
+  wanted: Wanted[];
+  encounter?: Encounter;
   gameOver?: string;
   /** Mode observateur (tests/simulations) : le joueur n'a ni besoins ni présence. */
   observer?: boolean;

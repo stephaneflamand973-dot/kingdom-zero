@@ -1,12 +1,12 @@
 // Génération du monde initial : la région de Valcendre (phase 3 : trois localités reliées par des routes).
 // La composition est fixe (pour des tests stables) ; les détails varient avec la graine.
-import type { AttrId, Business, BusinessKind, Character, GameState, Inventory, ItemId, Location, ProfessionId, Property, Settlement, SkillId, TraitId } from './types';
+import type { AttrId, Business, BusinessKind, Character, GameState, Inventory, ItemId, Location, OrgRole, Organization, ProfessionId, Property, Settlement, SkillId, TraitId } from './types';
 import { randInt } from './rng';
 import { absoluteHour, recordPrices } from './sim';
 import { modifyRelation } from './social';
 import { initialAmbition } from './society';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 const LOCATIONS: Omit<Location, 'settlementId'>[] = [
   { id: 'square', name: 'Place du Puits', kind: 'square', x: 500, y: 330, description: 'Le cœur de Valcendre : un vieux puits, des bancs de pierre, les nouvelles qui circulent.' },
@@ -74,6 +74,7 @@ export function emptyState(seed: number): GameState {
     locations: {}, locationOrder: [], characters: {}, characterOrder: [], businesses: {}, businessOrder: [],
     events: [], eventSeq: 0, idSeq: 100, playerId: 'player',
     settlements: {}, settlementOrder: [], roads: [], caravans: [], properties: [], priceBook: {}, festivals: [], tradeMemory: {},
+    orgs: {}, orgOrder: [], wars: [], wanted: [],
     ledger: { produced: {}, consumed: {}, externalMoneyIn: 0, externalMoneyOut: 0, externalItemsIn: {}, removedItems: {} },
     history: [], stats: { ticks: 0, trades: 0, npcActions: 0 },
     loans: [], contracts: [], orders: [],
@@ -125,6 +126,7 @@ export function createWorld(seed: number): GameState {
   });
 
   addRegion(state);
+  addPower(state);
   finalizeRelations(state);
   recordPrices(state, 'valcendre'); // le joueur connaît les prix de son village de départ
   for (const id of state.characterOrder) {
@@ -138,7 +140,7 @@ export function valcendreSettlement(infrastructure: number, taxRate: number): Se
   return {
     id: 'valcendre', name: 'Valcendre', kind: 'village', x: 500, y: 330, squareId: 'square', manorId: 'b_manor', stewardId: 'odon',
     taxRate, infrastructure, yields: {}, specialty: 'Village de carrefour : bois, un peu de fer, un peu de grain.',
-    prosperity: 50, popCap: 19, history: [],
+    prosperity: 50, popCap: 19, history: [], lordHouseId: 'h_delaval', unrest: 20, unrestWeeks: 0,
   };
 }
 
@@ -194,7 +196,7 @@ function finalizeRelations(state: GameState): void {
 const MARKET_ITEMS: ItemId[] = ['bread', 'grain', 'wood', 'iron', 'tools'];
 
 interface SettlementSpec {
-  settlement: Omit<Settlement, 'history' | 'prosperity'>;
+  settlement: Omit<Settlement, 'history' | 'prosperity' | 'lordHouseId' | 'unrest' | 'unrestWeeks'>;
   locations: Omit<Location, 'settlementId'>[];
   businesses: BizSpec[];
   npcs: NpcSpec[];
@@ -296,7 +298,7 @@ const HAUTEPIERRE: SettlementSpec = {
 export function addRegion(state: GameState): void {
   for (const spec of [SAINT_AUBIN, HAUTEPIERRE]) {
     if (state.settlements[spec.settlement.id]) continue;
-    state.settlements[spec.settlement.id] = { ...spec.settlement, prosperity: 50, history: [] };
+    state.settlements[spec.settlement.id] = { ...spec.settlement, prosperity: 50, history: [], lordHouseId: spec.settlement.id === 'hautepierre' ? 'h_roche' : 'h_delaval', unrest: 20, unrestWeeks: 0 };
     state.settlementOrder.push(spec.settlement.id);
     for (const l of spec.locations) { state.locations[l.id] = { ...l, settlementId: spec.settlement.id }; state.locationOrder.push(l.id); }
     for (const n of spec.npcs) addNpc(state, n);
@@ -325,3 +327,52 @@ const PROPERTIES: Omit<Property, 'storage'>[] = [
   { id: 'pr_hp_room', settlementId: 'hautepierre', locationId: 'hp_tavern', name: 'Chambre de la Taverne', price: 0, weeklyRent: 15, ownerId: 'berengere', storageCap: 30 },
   { id: 'pr_hp_coron', settlementId: 'hautepierre', locationId: 'hp_houses', name: 'Coron n° 7', price: 220, weeklyRent: 16, ownerId: null, storageCap: 90 },
 ];
+
+// ── Pouvoir (phase 4) ────────────────────────────────────────
+
+const POWER_NPCS: NpcSpec[] = [
+  { id: 'guerin', first: 'Guérin', last: 'Delaval', age: 58, sex: 'M', prof: 'seigneur', home: 'manor', money: 300, traits: ['prudent', 'honnete', 'avare'], skills: { gestion: 45, commandement: 40, combat: 30, diplomatie: 30 }, attrs: { volonte: 7 } },
+  { id: 'gaucher', first: 'Gaucher', last: 'Delaval', age: 27, sex: 'M', prof: 'seigneur', home: 'manor', money: 140, traits: ['ambitieux', 'malhonnete', 'rancunier'], skills: { combat: 32, commandement: 20, diplomatie: 18 }, attrs: { force: 6, charisme: 6 } },
+  { id: 'alienor', first: 'Aliénor', last: 'de Roche', age: 49, sex: 'F', prof: 'seigneur', home: 'hp_manor', money: 280, traits: ['ambitieux', 'colerique'], skills: { gestion: 40, commandement: 45, diplomatie: 25 }, attrs: { volonte: 8, intelligence: 7 } },
+  { id: 'berald', first: 'Bérald', last: 'de Roche', age: 22, sex: 'M', prof: 'seigneur', home: 'hp_manor', money: 90, traits: ['honnete', 'loyal'], skills: { combat: 36, commandement: 15 }, attrs: { force: 7 } },
+];
+
+function org(id: string, name: string, kind: Organization['kind'], seatId: string, leaderId: string, members: [string, OrgRole][], treasury: number, extra: Partial<Organization> = {}): Organization {
+  return {
+    id, name, kind, leaderId, members: members.map(m => m[0]), roles: Object.fromEntries(members), treasury, stash: {}, seatId,
+    founded: 0, relations: {}, heat: 0, dues: 0, patrolRoads: [], service: {}, ...extra,
+  };
+}
+
+/** Maisons nobles, guilde des marchands et bande des Loups (aussi utilisé pour migrer une sauvegarde v3). */
+export function addPower(state: GameState, migrating = false): void {
+  if (state.orgOrder?.length) return;
+  state.orgs = {}; state.orgOrder = []; state.wars = []; state.wanted = [];
+  for (const n of POWER_NPCS) if (!state.characters[n.id]) { addNpc(state, n); state.characters[n.id].ambition = initialAmbition(state, state.characters[n.id]); }
+  // Les fonds des nouvelles organisations viennent de l'extérieur du pays (trésor seigneurial) : comptabilisés
+  const add = (o: Organization) => { state.orgs[o.id] = o; state.orgOrder.push(o.id); if (migrating) state.ledger.externalMoneyIn += o.treasury; };
+  if (migrating) for (const n of POWER_NPCS) state.ledger.externalMoneyIn += n.money;
+  add(org('h_delaval', 'Maison Delaval', 'house', 'valcendre', 'guerin',
+    [['guerin', 'seigneur'], ['gaucher', 'heritier'], ['odon', 'vassal'], ['renier', 'vassal'], ['bastien', 'soldat'], ['hugues', 'soldat'], ['thomas', 'soldat']], 400));
+  add(org('h_roche', 'Maison de Roche', 'house', 'hautepierre', 'alienor',
+    [['alienor', 'seigneur'], ['berald', 'heritier'], ['aymon', 'vassal'], ['garin', 'soldat']], 500));
+  add(org('g_marchands', 'Guilde des marchands de la Loue', 'guild', 'staubin', 'gilles',
+    [['gilles', 'chef'], ['bertrand', 'membre'], ['gontran', 'membre']], 60, { dues: 5 }));
+  add(org('b_loups', 'Les Loups de la Combe', 'gang', 'valcendre', 'raoul',
+    [['raoul', 'chef'], ['colin', 'membre'], ['gerbert', 'membre'], ['denis', 'membre']], 20, { hideoutId: 'woodlot' }));
+  state.orgs.h_delaval.relations.h_roche = -40;
+  state.orgs.h_roche.relations.h_delaval = -40;
+  for (const id of state.settlementOrder) {
+    const st = state.settlements[id];
+    st.lordHouseId ??= id === 'hautepierre' ? 'h_roche' : 'h_delaval';
+    st.unrest ??= 20; st.unrestWeeks ??= 0;
+  }
+  const bond = (a: string, b: string, aff: number, tr: number) => { modifyRelation(state, a, b, aff, tr); modifyRelation(state, b, a, aff, tr); };
+  bond('guerin', 'gaucher', 5, -10);      // un père méfiant, un fils impatient
+  bond('guerin', 'odon', 30, 35);
+  bond('alienor', 'berald', 45, 40);
+  bond('alienor', 'aymon', 20, 30);
+  bond('gaucher', 'raoul', 10, 5);        // de vieilles connaissances peu recommandables
+  bond('raoul', 'colin', 25, 15);
+  for (const id of state.characterOrder) for (const r of Object.values(state.characters[id].relations)) if (r.lastInteraction === undefined) r.lastInteraction = -1;
+}

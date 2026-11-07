@@ -17,6 +17,10 @@ import { addItem, aliveCharacters, allBusinesses, businessesIn, businessSettleme
 import { merchantsPlanTrips, processCaravans } from './trade';
 import { collectRents } from './property';
 import { weeklyTerritories } from './territory';
+import { onDeathOrgs, orgsOf } from './orgs';
+import { feedPrisoners, hourlyJustice } from './justice';
+import { caravanAmbushes, weeklyGangs } from './gangs';
+import { monthlyIntrigues, weeklyGovernance } from './nobility';
 import { npcBorrowing, ownedBusinesses, processLoans } from './finance';
 import { merchantFulfils, postOrder, processOrders, weeklyContractReview } from './contracts';
 import { festivalTonight, initialAmbition, jobHopping, processAmbitions, startFestivals, trySlander } from './society';
@@ -51,7 +55,7 @@ export function advanceTime(state: GameState, minutes: number): number {
 export function applyHourlyNeeds(state: GameState, c: Character): void {
   const a = c.activity;
   const n = c.needs;
-  const sleeping = a.kind === 'sleep';
+  const sleeping = a.kind === 'sleep' || a.kind === 'jailed';
   n.hunger = clamp(n.hunger + (sleeping ? HUNGER_PER_HOUR * 0.6 : HUNGER_PER_HOUR), 0, 100);
   if (sleeping) {
     const q = a.quality ?? 1;
@@ -89,8 +93,12 @@ export function hourTick(state: GameState): void {
   // 1. Conséquences de l'heure écoulée (activité en cours)
   for (const c of people) if (!(c.isPlayer && state.observer)) applyHourlyNeeds(state, c);
 
-  // 2. Travail effectué pendant l'heure écoulée
+  // 2. Travail effectué pendant l'heure écoulée (et heures de service des soldats)
   for (const c of people) {
+    if (c.alive && c.activity.kind === 'patrol') {
+      for (const h of orgsOf(state, c.id, 'house')) if (h.roles[c.id] === 'soldat') h.service[c.id] = (h.service[c.id] ?? 0) + 1;
+      continue;
+    }
     if (c.alive && c.activity.kind === 'forage') {
       c.forageProgress += (0.45 + c.skills.agriculture / 160 + c.attributes.endurance * 0.02) * (c.sick > 0 ? 0.5 : 1);
       while (c.forageProgress >= 1) {
@@ -142,8 +150,10 @@ export function hourTick(state: GameState): void {
   if (d.hour === 7 || d.hour === 13) for (const b of allBusinesses(state)) manageBusiness(state, b, d.hour === 13);
   if (d.hour === 13) merchantFulfils(state);
   if (d.hour === 17 && d.dayOfSeason === 1) startFestivals(state);
-  // Phase 3 : caravanes en route et départs des marchands
+  // Phase 3 : caravanes en route et départs des marchands ; phase 4 : brigands et justice
+  caravanAmbushes(state);
   processCaravans(state);
+  hourlyJustice(state);
   if (d.hour === 7) merchantsPlanTrips(state);
 
   // 6. Démissions pour salaires impayés
@@ -256,20 +266,23 @@ export function dayTick(state: GameState): void {
 
   // Hebdomadaire (chaque lundi) : impôts, salaires, migrations
   if (d.weekday === 0 && d.day > 0) {
+    const inRevolt = (sid: string) => (state.settlements[sid].revoltUntilDay ?? -1) >= d.day;
     for (const b of allBusinesses(state)) {
       if (b.kind === 'manor') continue;
       const st = businessSettlement(state, b);
+      if (inRevolt(st.id)) { weeklyWageReview(state, b); continue; }
       const tax = Math.floor(Math.max(0, b.treasury) * st.taxRate);
       if (tax > 0 && transferMoney(state, P.b(b.id), P.b(st.manorId), tax)) {
+        lordShare(state, st.id, tax);
         logEvent(state, { type: 'tax', businessId: b.id, importance: 1, text: `L'intendance de ${st.name} perçoit ${tax} d d'impôt sur ${b.name}.` });
       }
       weeklyWageReview(state, b);
     }
     // Taxe par foyer : chaque adulte verse sa part à l'intendance de sa localité
     for (const c of npcs(state)) {
-      if (c.age < 16) continue;
+      if (c.age < 16 || inRevolt(homeSettlement(state, c).id)) continue;
       const due = Math.min(c.money, HEAD_TAX);
-      if (due > 0) transferMoney(state, P.c(c.id), P.b(homeSettlement(state, c).manorId), due);
+      if (due > 0 && transferMoney(state, P.c(c.id), P.b(homeSettlement(state, c).manorId), due)) lordShare(state, homeSettlement(state, c).id, due);
     }
     const pl = state.characters[state.playerId];
     if (pl.alive && !state.observer && pl.money > 0) {
@@ -285,9 +298,13 @@ export function dayTick(state: GameState): void {
     }
     collectRents(state);
     weeklyTerritories(state);
+    weeklyGovernance(state);
+    weeklyGangs(state);
   }
 
   for (const sid of state.settlementOrder) soupKitchen(state, sid);
+  feedPrisoners(state);
+  if (d.dayOfSeason === 14) monthlyIntrigues(state);
 
   // Phase 2 : dettes, commandes, ambitions, contrats
   processLoans(state);
@@ -356,6 +373,7 @@ export function killCharacter(state: GameState, c: Character, cause: string): vo
     addItem(manor.stock, k as ItemId, v!);
     delete c.inventory[k as ItemId];
   }
+  onDeathOrgs(state, c);
   if (c.isPlayer) state.gameOver = death.text;
 }
 
@@ -373,11 +391,18 @@ function almsgiving(state: GameState, settlementId: string): void {
     witnesses: poor.map(c => c.id) });
 }
 
+/** Part seigneuriale : 40 % de chaque impôt perçu par une intendance remonte à la maison qui tient la localité. */
+function lordShare(state: GameState, settlementId: string, amount: number): void {
+  const houseId = state.settlements[settlementId].lordHouseId;
+  const share = Math.floor(amount * 0.4);
+  if (houseId && state.orgs[houseId] && share > 0) transferMoney(state, P.b(state.settlements[settlementId].manorId), P.o(houseId), share);
+}
+
 /** Soupe populaire : l'intendance achète du pain pour les affamés sans le sou (si sa caisse le permet). */
 export function soupKitchen(state: GameState, settlementId: string): void {
   const manor = manorOf(state, settlementId);
   const hungry = residents(state, settlementId).filter(c => c.money < 5 && c.needs.hunger > 55 && qty(c.inventory, 'bread') === 0);
-  if (!hungry.length || manor.treasury < 150) return;
+  if (!hungry.length || manor.treasury < 60) return;
   const bakery = businessesIn(state, settlementId).filter(b => b.sells.includes('bread') && b.kind !== 'manor' && qty(b.stock, 'bread') > 0)
     .sort((a, b) => askPrice(state, a, 'bread') - askPrice(state, b, 'bread'))[0];
   if (!bakery) return;
@@ -385,7 +410,7 @@ export function soupKitchen(state: GameState, settlementId: string): void {
   let served = 0;
   for (const c of hungry) {
     const n = Math.min(3, qty(bakery.stock, 'bread'));
-    if (n <= 0 || manor.treasury - n * price < 100) break;
+    if (n <= 0 || manor.treasury - n * price < 40) break;
     transferMoney(state, P.b(manor.id), P.b(bakery.id), n * price);
     transferItem(state, P.b(bakery.id), P.c(c.id), 'bread', n);
     served++;

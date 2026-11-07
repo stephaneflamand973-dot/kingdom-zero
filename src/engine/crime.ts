@@ -7,13 +7,15 @@ import { applyBeliefEffect, modifyRelation } from './social';
 import type { Business, Character, GameState, ItemId, WorldEvent } from './types';
 import { businessSettlement, charactersAt, clamp, fullName, qty } from './util';
 import { gainXp } from './skills';
+import { isLawman } from './orgs';
+import { addWanted } from './justice';
 
 export interface TheftOutcome { success: boolean; caught: boolean; event: WorldEvent; fine: number; detectedBy: string[] }
 
 export function detectionChance(observer: Character, thief: Character, b: Business): number {
   let p = 0.08 + observer.attributes.perception * 0.035;
   if (observer.id === b.ownerId) p += 0.2;
-  if (observer.profession === 'garde' && observer.activity.kind === 'work') p += 0.25;
+  if ((observer.profession === 'garde' && observer.activity.kind === 'work') || (observer.profession === 'soldat' && observer.activity.kind === 'patrol')) p += 0.25;
   if (b.employees.includes(observer.id)) p += 0.08;
   p -= thief.skills.discretion / 180 + thief.attributes.agilite * 0.015;
   return clamp(p, 0.03, 0.9);
@@ -36,7 +38,7 @@ export function attemptTheft(state: GameState, thief: Character, b: Business, it
     });
     return { success: true, caught: false, event: ev, fine: 0, detectedBy };
   }
-  const guard = observers.find(o => o.profession === 'garde') ?? state.characterOrder.map(id => state.characters[id]).find(c => c.alive && c.profession === 'garde' && c.activity.kind === 'work');
+  const guard = observers.find(o => isLawman(state, o));
   const ev = logEvent(state, {
     type: 'theft_caught', actorId: thief.id, businessId: b.id, locationId: b.locationId, importance: 3,
     text: `${fullName(thief)} est surpris en train de voler ${n > 1 ? ITEMS[item].plural : ITEMS[item].one} à ${b.name} par ${detectedBy.map(id => fullName(state.characters[id])).join(', ')}.`,
@@ -57,7 +59,9 @@ export function attemptTheft(state: GameState, thief: Character, b: Business, it
     });
     if (fine === 0) thief.needs.energy = clamp(thief.needs.energy - 25, 0, 100);
   } else {
+    // pas de garde sur place : le voleur s'enfuit, mais il est désormais recherché
     thief.health = clamp(thief.health - 6, 0, 100);
+    addWanted(state, thief.id, businessSettlement(state, b).id, 'vol', 20);
     thief.needs.energy = clamp(thief.needs.energy - 10, 0, 100);
   }
   return { success: false, caught: true, event: ev, fine, detectedBy };

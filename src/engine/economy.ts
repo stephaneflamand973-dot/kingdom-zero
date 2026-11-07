@@ -10,16 +10,21 @@ import type { Business, Character, GameState, Inventory, ItemId } from './types'
 import { addItem, allBusinesses, clamp, fullName, hasTrait, isOpen, ownerName, qty , businessesIn, businessSettlement, hereSettlement, settlementIdOf } from './util';
 import { getRelation, modifyRelation } from './social';
 
-export type Party = { t: 'c' | 'b'; id: string };
+export type Party = { t: 'c' | 'b' | 'o'; id: string };
 export const P = {
   c: (id: string): Party => ({ t: 'c', id }),
   b: (id: string): Party => ({ t: 'b', id }),
+  o: (id: string): Party => ({ t: 'o', id }), // organisation (phase 4)
 };
 
 function holder(state: GameState, p: Party): { money: number; inv: Inventory; set: (m: number) => void } {
   if (p.t === 'c') {
     const c = state.characters[p.id];
     return { money: c.money, inv: c.inventory, set: m => { c.money = m; } };
+  }
+  if (p.t === 'o') {
+    const o = state.orgs[p.id];
+    return { money: o.treasury, inv: o.stash, set: m => { o.treasury = m; } };
   }
   const b = state.businesses[p.id];
   return { money: b.treasury, inv: b.stock, set: m => { b.treasury = m; } };
@@ -328,7 +333,7 @@ export function hireBest(state: GameState, b: Business, candidates?: Character[]
   const skill = role === 'garde' ? 'combat' : WORK_SKILL[b.kind];
   const here = settlementIdOf(state, b.locationId);
   const pool = (candidates ?? state.characterOrder.map(id => state.characters[id]))
-    .filter(c => settlementIdOf(state, c.homeId) === here)
+    .filter(c => settlementIdOf(state, c.homeId) === here && c.profession !== 'seigneur' && c.profession !== 'soldat')
     .filter(c => c.alive && !c.isPlayer && !c.employerId && c.age >= 14 && c.age < 70 && !state.businessOrder.some(id => state.businesses[id].ownerId === c.id));
   if (pool.length === 0) return undefined;
   const scored = pool
@@ -389,6 +394,7 @@ export function totalMoney(state: GameState): number {
   let t = 0;
   for (const id of state.characterOrder) t += state.characters[id].money;
   for (const id of state.businessOrder) t += state.businesses[id].treasury;
+  for (const id of state.orgOrder ?? []) t += state.orgs[id].treasury;
   return t;
 }
 
@@ -398,6 +404,7 @@ export function totalItems(state: GameState): Inventory {
   for (const id of state.businessOrder) for (const [k, v] of Object.entries(state.businesses[id].stock)) addItem(out, k as ItemId, v!);
   for (const cv of state.caravans) if (cv.status === 'en_route') for (const [k, v] of Object.entries(cv.cargo)) addItem(out, k as ItemId, v!);
   for (const pr of state.properties) for (const [k, v] of Object.entries(pr.storage)) addItem(out, k as ItemId, v!);
+  for (const id of state.orgOrder ?? []) for (const [k, v] of Object.entries(state.orgs[id].stash)) addItem(out, k as ItemId, v!);
   return out;
 }
 

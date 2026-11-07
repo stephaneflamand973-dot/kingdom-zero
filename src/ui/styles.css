@@ -318,3 +318,20 @@ h4 { font-size: .75rem; letter-spacing: .14em; text-transform: uppercase; color:
 .prices td.ko { color: #ff9b7a; }
 .village-stats { grid-template-columns: repeat(5, 1fr); }
 @media (max-width: 760px) { .village-stats { grid-template-columns: repeat(3, 1fr); } .owner-grid { grid-template-columns: 1fr auto; } .owner-grid .slot-btns { grid-column: 1 / -1; justify-content: flex-start; } }
+
+/* ── Phase 4 : combat, pouvoir ── */
+.encounter h2 { color: #7a1f1a; }
+.fighters { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 12px 0; }
+.fighter { display: flex; gap: 10px; align-items: center; background: rgba(255,255,255,.35); border: 1px solid #c4ab7c; border-radius: 8px; padding: 6px 8px; }
+.fighter.you { border-color: #5c8a3a; }
+.fighter.down { opacity: .45; }
+.fighter > div { flex: 1; min-width: 0; }
+.hpbar { height: 8px; background: rgba(74,42,20,.15); border-radius: 99px; overflow: hidden; margin: 3px 0; }
+.hpbar > div { height: 100%; background: #5c8a3a; transition: width .3s; }
+.hpbar.foe > div { background: #a8322d; }
+.combat-log { list-style: none; padding: 8px 10px; margin: 0; background: rgba(74,42,20,.08); border-radius: 8px; font-size: .88rem; max-height: 150px; overflow: auto; display: flex; flex-direction: column; gap: 3px; }
+.house { background: rgba(14,10,7,.45); border: 1px solid var(--line-soft); border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; }
+.lands { margin: 4px 0; padding-left: 18px; font-size: .86rem; }
+.tabs { flex-wrap: wrap; }
+.tabs button { flex: 1 0 25%; }
+.house-sub { font-style: italic; fill: #7a1f1a; }

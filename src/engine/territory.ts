@@ -57,9 +57,9 @@ function relocations(state: GameState): void {
     const hiringHere = businessesIn(state, sid).some(b => isHiring(state, b));
     if (hiringHere) continue;
     for (const c of residents(state, sid)) {
-      if (c.employerId || c.age >= 55 || c.money < 15 || hasTrait(c, 'loyal')) continue;
+      if (c.employerId || c.age >= 55 || c.money < 15 || hasTrait(c, 'loyal') || c.profession === 'seigneur' || c.profession === 'soldat') continue;
       if (Object.values(state.businesses).some(b => b.ownerId === c.id)) continue;
-      if (c.activity.kind === 'travel') continue;
+      if (c.activity.kind === 'travel' || (c.jailedUntil ?? 0) > state.time) continue; // un prisonnier ne déménage pas
       const dest = state.settlementOrder
         .filter(o => o !== sid && businessesIn(state, o).some(b => isHiring(state, b)))
         .map(o => state.settlements[o])

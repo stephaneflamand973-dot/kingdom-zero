@@ -8,7 +8,7 @@ import { LocationGlyph } from './icons';
 
 export const ACTIVITY_COLOR: Record<ActivityKind, string> = {
   work: '#e3a83b', sleep: '#5b7bb3', socialize: '#b57ad1', shop: '#6fbf73', idle: '#a59b86', seekJob: '#e07a5f',
-  patrol: '#e3a83b', travel: '#d9d2b8', talk: '#b57ad1', train: '#e07a5f', forage: '#8fae5d', manage: '#e3a83b', dead: '#444', eat: '#6fbf73',
+  patrol: '#e3a83b', travel: '#d9d2b8', talk: '#b57ad1', train: '#e07a5f', forage: '#8fae5d', manage: '#e3a83b', dead: '#444', eat: '#6fbf73', jailed: '#555', ambush: '#a8322d',
 };
 
 function nightOpacity(hour: number, minute: number): number {
@@ -98,8 +98,10 @@ function LocalMap({ state, onTravel, onSelect }: { state: GameState; onTravel: (
   const [hover, setHover] = useState<string | null>(null);
   const p = state.characters[state.playerId];
   const d = toDate(state.time);
-  const sid = settlementIdOf(state, p.locationId);
-  const st = state.settlements[sid];
+  // sur une route (embuscade), on montre la localité de destination ou d'attache
+  const onRoad = state.locations[p.locationId]?.kind === 'road';
+  const sid = onRoad ? settlementIdOf(state, state.encounter?.destination ?? p.homeId) : settlementIdOf(state, p.locationId);
+  const st = state.settlements[sid] ?? state.settlements[state.settlementOrder[0]];
   const locs = state.locationOrder.map(id => state.locations[id]).filter(l => l.settlementId === sid);
   const people = aliveCharacters(state).filter(c => !c.isPlayer);
   const byLoc: Record<string, typeof people> = {};
@@ -260,6 +262,8 @@ function RegionMap({ state, onTravel }: { state: GameState; onTravel: (squareId:
             <g transform="translate(-17 -17)" className="loc-glyph"><LocationGlyph kind={id === 'hautepierre' ? 'mine' : id === 'staubin' ? 'farm' : 'square'} size={34} /></g>
             <text y="62" textAnchor="middle" className="loc-label">{st.name}</text>
             <text y="80" textAnchor="middle" className="settle-sub">{prosperityLabel(st.prosperity)} · {id === here ? 'tu es ici' : formatDuration(mins)}</text>
+            <text y="97" textAnchor="middle" className="settle-sub house-sub">{state.orgs[st.lordHouseId]?.name ?? ''}{(st.revoltUntilDay ?? -1) >= toDate(state.time).day ? ' · révolte' : ''}</text>
+            {state.wars.some(w => w.status === 'active' && w.targetSettlementId === id) && <text x="44" y="-30" fontSize="30" aria-label="guerre">⚔</text>}
             {id === here && <g className="player-pin" transform="translate(0 -40)"><path d="M0 0 L-9 -16 A10 10 0 1 1 9 -16 Z" fill="#a8322d" stroke="#f3e6c4" strokeWidth="2" /><circle cy="-19" r="4" fill="#f3e6c4" /></g>}
           </g>
         );

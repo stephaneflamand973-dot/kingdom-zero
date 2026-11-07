@@ -11,6 +11,7 @@ import { fem, greeting, refusalText } from './narrative';
 import { activeLoans, businessInTrouble, createLoan, loanTerms, ownedBusinesses, repay } from './finance';
 import { acceptOrder, activeContract, deliverOrder, resign, signContract } from './contracts';
 import { festivalAt, festivalTonight, serveFestivalAle } from './society';
+import { rollTravelAmbush } from './playerPower';
 import { carryCapacity, weightOf } from './trade';
 import { buyProperty, deposit, hasAccess, leaveProperty, propertiesAt, rentProperty, withdraw } from './property';
 import { buyBusinessAsPlayer, foundAsPlayer, manage, type OwnerOrder } from './enterprise';
@@ -27,13 +28,16 @@ import { charactersAt, clamp, fullName, hasTrait, isOpen, player, qty, travelMin
 const ok = (message: string, minutes: number, eventIds?: string[]): ActionResult => ({ ok: true, message, minutes, eventIds });
 const no = (message: string): ActionResult => ({ ok: false, message, minutes: 0 });
 
-function finish(state: GameState, p: Character, minutes: number): void {
+export function finish(state: GameState, p: Character, minutes: number): void {
   advanceTime(state, minutes);
   if (p.alive) p.activity = { kind: 'idle', locationId: p.locationId, since: state.time, note: 'Libre' };
 }
 
-function guard(state: GameState): ActionResult | null {
+export function guard(state: GameState): ActionResult | null {
   if (state.gameOver) return no('La partie est terminée.');
+  if (state.encounter) return no('Tu dois d’abord régler la rencontre en cours.');
+  const p = player(state);
+  if ((p.jailedUntil ?? 0) > state.time) return no('Tu es en prison.');
   return null;
 }
 
@@ -45,6 +49,9 @@ export function moveTo(state: GameState, locationId: string): ActionResult {
   if (!state.locations[locationId]) return no('Lieu inconnu.');
   if (p.locationId === locationId) return no('Tu y es déjà.');
   const minutes = travelMinutes(state, p.locationId, locationId);
+  // Sur les routes, des brigands peuvent surgir (phase 4)
+  const ambush = rollTravelAmbush(state, p.locationId, locationId, minutes);
+  if (ambush) return ambush;
   p.activity = { kind: 'travel', locationId: p.locationId, since: state.time, note: `En route vers ${state.locations[locationId].name}` };
   p.locationId = locationId;
   finish(state, p, minutes);
