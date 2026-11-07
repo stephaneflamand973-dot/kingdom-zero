@@ -4,6 +4,9 @@
 // franchie (résolution horaire), puis à chaque frontière de jour.
 // `processedHours` garantit qu'une heure n'est jamais simulée deux fois.
 // ─────────────────────────────────────────────────────────────
+import { npcApproaches } from './approaches';
+import { weeklyPatronage } from './family';
+import { dailyIncidents, epidemicFactor, grainConvoy, hasIncident } from './incidents';
 import { RECIPES, WORK_ENERGY_COST, WORK_SKILL, WORK_ATTR, FIRST_NAMES_F, FIRST_NAMES_M, LAST_NAMES } from './data';
 import { askPrice, isHiring, laborMultiplier, manageBusiness, P, payWage, runProduction, transferItem, transferMoney, weeklyWageReview, totalMoney, referencePrice, fireEmployee } from './economy';
 import { logEvent, pruneEvents } from './events';
@@ -102,11 +105,16 @@ export function hourTick(state: GameState): void {
       continue;
     }
     if (c.alive && c.activity.kind === 'forage') {
-      c.forageProgress += (0.45 + c.skills.agriculture / 160 + c.attributes.endurance * 0.02) * (c.sick > 0 ? 0.5 : 1);
+      // bois mort, ou vivres de disette (phase 6) : rendement faible, très faible en hiver
+      const item = c.activity.item ?? 'wood';
+      const rate = item === 'wood'
+        ? 0.45 + c.skills.agriculture / 160 + c.attributes.endurance * 0.02
+        : (0.22 + c.skills.agriculture / 300) * [1, 1.2, 1.4, 0.45][d.season];
+      c.forageProgress += rate * (c.sick > 0 ? 0.5 : 1);
       while (c.forageProgress >= 1) {
         c.forageProgress -= 1;
-        addItem(c.inventory, 'wood', 1);
-        addItem(state.ledger.produced, 'wood', 1);
+        addItem(c.inventory, item, 1);
+        addItem(state.ledger.produced, item, 1);
       }
       gainXp(state, c, 'agriculture', 0.4);
       continue;
@@ -172,13 +180,14 @@ export function hourTick(state: GameState): void {
   for (const c of npcs(state)) npcDecide(state, c, d.hour, d.weekday);
   const me = state.characters[state.playerId];
   if (state.autopilotUntil && state.autopilotUntil > state.time && me.alive && !state.encounter) npcDecide(state, me, d.hour, d.weekday, true);
+  npcApproaches(state); // phase 6 : un PNJ peut aborder le joueur de lui-même
 
   // 8. Vie sociale : regroupement par lieu
   const groups: Record<string, Character[]> = {};
   for (const c of aliveCharacters(state)) {
     if (c.activity.kind === 'socialize') (groups[c.locationId] ??= []).push(c);
   }
-  for (const id of Object.keys(groups).sort()) socialHour(state, groups[id], (a, b) => { trySlander(state, a, b); }, festivalTonight(state, id) ? 2 : 0);
+  for (const id of Object.keys(groups).sort()) socialHour(state, groups[id], (a, b) => { trySlander(state, a, b); }, festivalTonight(state, id) ? 2 : hasIncident(state, settlementIdOf(state, id), 'foire') && state.locations[id]?.kind === 'tavern' ? 1 : 0);
 
   // Le joueur relève les prix de la localité où il se trouve
   const pl = state.characters[state.playerId];
@@ -232,10 +241,12 @@ export function dayTick(state: GameState): void {
   for (const c of aliveCharacters(state)) spoil(c.inventory);
 
   // Chauffage et cuisine : un fagot tous les trois jours par personne (tous les deux en hiver)
-  if (d.day % (d.season === 3 ? 2 : 3) === 0) {
+  {
     for (const c of npcs(state)) {
+      const freezing = hasIncident(state, homeSettlement(state, c).id, 'grand_froid');
+      if (!freezing && d.day % (d.season === 3 ? 2 : 3) !== 0) continue;
       if (qty(c.inventory, 'wood') > 0) { addItem(c.inventory, 'wood', -1); addItem(state.ledger.consumed, 'wood', 1); }
-      else if (d.season === 3) {
+      else if (d.season === 3 || freezing) {
         c.health = clamp(c.health - 5, 0, 100);
         logEvent(state, { type: 'cold', actorId: c.id, importance: 1, text: `${fullName(c)} grelotte sans feu dans l'âtre.` });
       }
@@ -246,13 +257,26 @@ export function dayTick(state: GameState): void {
   for (const sid of state.settlementOrder) {
     const st = state.settlements[sid];
     st.infrastructure = clamp(st.infrastructure - 0.3, 0, 100);
+    // Corvée (phase 6) : quand les chemins se dégradent, les adultes sans emploi doivent quelques heures
+    // d'entretien à la communauté (sans salaire, au prix de leur fatigue)
+    if (st.infrastructure < 60) {
+      const crew = residents(state, sid).filter(c => !c.employerId && c.age >= 16 && c.age < 60 && c.sick === 0 && c.health > 50 && c.needs.energy >= 40 && c.needs.hunger < 70
+        && c.profession !== 'seigneur' && (c.jailedUntil ?? 0) <= state.time && !state.businessOrder.some(id => state.businesses[id].ownerId === c.id));
+      for (const c of crew) c.needs.energy = clamp(c.needs.energy - 8, 0, 100);
+      st.infrastructure = clamp(st.infrastructure + crew.length * 0.15, 0, 100);
+      if (crew.length && d.weekday === 0) logEvent(state, { type: 'work', importance: 1, locationId: st.squareId,
+        text: `Corvée à ${st.name} : ${crew.length} habitant${crew.length > 1 ? 's' : ''} sans emploi remettent les chemins en état.` });
+    }
   }
+  // Aléas : météo, épidémies, incendies, foires (phase 6)
+  dailyIncidents(state);
 
   // Maladies (l'insalubrité et la faim augmentent le risque)
   for (const c of aliveCharacters(state)) {
     if (c.sick > 0) continue;
     let p = 0.006 + (hereSettlement(state, c).infrastructure < 40 ? 0.008 : 0) + (c.needs.hunger > 70 ? 0.01 : 0) + (c.age > 55 ? 0.006 : 0);
     if (d.season === 3) p *= 1.6;
+    p *= epidemicFactor(state, hereSettlement(state, c).id);
     if (chance(state, p)) {
       c.sick = randInt(state, 18, 60);
       logEvent(state, { type: 'sickness', actorId: c.id, importance: c.isPlayer ? 3 : 2, locationId: c.locationId,
@@ -309,9 +333,10 @@ export function dayTick(state: GameState): void {
     weeklyGovernance(state);
     weeklyGangs(state);
     weeklyCourtship(state);
+    weeklyPatronage(state);
   }
 
-  for (const sid of state.settlementOrder) soupKitchen(state, sid);
+  for (const sid of state.settlementOrder) { grainConvoy(state, sid); soupKitchen(state, sid); }
   feedPrisoners(state);
   if (d.dayOfSeason === 14) monthlyIntrigues(state);
 
@@ -418,16 +443,19 @@ export function soupKitchen(state: GameState, settlementId: string): void {
   const manor = manorOf(state, settlementId);
   const hungry = residents(state, settlementId).filter(c => c.money < 5 && c.needs.hunger > 55 && qty(c.inventory, 'bread') === 0);
   if (!hungry.length || manor.treasury < 60) return;
-  const bakery = businessesIn(state, settlementId).filter(b => b.sells.includes('bread') && b.kind !== 'manor' && qty(b.stock, 'bread') > 0)
-    .sort((a, b) => askPrice(state, a, 'bread') - askPrice(state, b, 'bread'))[0];
+  // du pain si possible, sinon du grain pour la bouillie (phase 6)
+  const pickSeller = (item: ItemId) => businessesIn(state, settlementId).filter(b => b.sells.includes(item) && b.kind !== 'manor' && qty(b.stock, item) > 0)
+    .sort((a, b) => askPrice(state, a, item) - askPrice(state, b, item) || (a.id < b.id ? -1 : 1))[0];
+  const item: ItemId = pickSeller('bread') ? 'bread' : 'grain';
+  const bakery = pickSeller(item);
   if (!bakery) return;
-  const price = askPrice(state, bakery, 'bread');
+  const price = askPrice(state, bakery, item);
   let served = 0;
   for (const c of hungry) {
-    const n = Math.min(3, qty(bakery.stock, 'bread'));
+    const n = Math.min(3, qty(bakery.stock, item));
     if (n <= 0 || manor.treasury - n * price < 40) break;
     transferMoney(state, P.b(manor.id), P.b(bakery.id), n * price);
-    transferItem(state, P.b(bakery.id), P.c(c.id), 'bread', n);
+    transferItem(state, P.b(bakery.id), P.c(c.id), item, n);
     served++;
   }
   if (served) logEvent(state, { type: 'help', importance: 1, locationId: state.settlements[settlementId].squareId,

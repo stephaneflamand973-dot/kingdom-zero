@@ -59,6 +59,7 @@ export interface Activity {
   wage?: number;     // salaire horaire négocié (journalier)
   until?: number;    // fin d'une activité longue (voyage)
   quality?: number;  // qualité du repos (0..1) pour le sommeil
+  item?: ItemId;     // cueillette : bois mort (défaut) ou vivres de disette (phase 6)
 }
 
 export type GoalKind = 'trouver_emploi' | 'epargner' | 'prosperer' | 'survivre' | 'servir';
@@ -167,7 +168,12 @@ export type EventType =
   | 'caravan' | 'founding' | 'move' | 'rent' | 'eviction' | 'property'
   | 'ambush' | 'racket' | 'vandalism' | 'recruit' | 'arrest' | 'jail' | 'bounty' | 'tribute' | 'tax_change'
   | 'revolt' | 'war' | 'battle' | 'conquest' | 'peace' | 'plot' | 'assassination' | 'succession' | 'title' | 'combat' | 'diplomacy'
-  | 'courtship' | 'wedding' | 'pregnancy' | 'birth' | 'coming_of_age' | 'estate' | 'adoption' | 'widowhood';
+  | 'courtship' | 'wedding' | 'pregnancy' | 'birth' | 'coming_of_age' | 'estate' | 'adoption' | 'widowhood'
+  | 'incident' | 'approach';
+
+/** Aléa du monde (phase 6) : météo, épidémie, incendie, foire… */
+export type IncidentKind = 'secheresse' | 'recolte' | 'grand_froid' | 'epidemie' | 'incendie' | 'foire';
+export interface Incident { id: string; kind: IncidentKind; settlementId: string; fromDay: number; toDay: number; businessId?: string }
 
 export interface WorldEvent {
   id: string;
@@ -308,6 +314,7 @@ export interface Settlement {
   unrestWeeks: number;           // semaines consécutives de forte grogne
   revoltUntilDay?: number;       // révolte : l'impôt n'est plus perçu
   popCap: number;                // au-delà, les migrants ne s'installent plus
+  convoyDay?: number;            // dernier convoi de grain d'urgence (phase 6)
   history: SettlementSnapshot[];
 }
 
@@ -411,6 +418,10 @@ export interface GameState {
   /** Dernier jour où les anniversaires ont été fêtés (évite un double vieillissement). */
   birthdaysDoneDay?: number;
   gameOver?: string;
+  /** Aléas en cours ou récents (phase 6). */
+  incidents?: Incident[];
+  /** Dernière heure où un PNJ a abordé le joueur de lui-même (phase 6). */
+  lastApproach?: number;
   /** Mode observateur (tests/simulations) : le joueur n'a ni besoins ni présence. */
   observer?: boolean;
 }

@@ -5,6 +5,7 @@ import {
   moodOf, ownedBusinesses, PROFESSION_NAMES, qty, relationLabel, talk, TRAIT_NAMES, type TalkKind,
 } from '../engine';
 import { Crest } from './icons';
+import { useModal } from './a11y';
 import type { Game } from './useGame';
 
 const TALKS: { kind: TalkKind; label: string; hint: string }[] = [
@@ -41,9 +42,10 @@ export function NpcDialog({ game, npcId, onClose }: { game: Game; npcId: string;
   const theyOwe = activeLoans(state, { borrowerId: n.id, lenderId: p.id }).reduce((s, l) => s + l.remaining, 0);
   const needsMoney = n.money < 30 || owned.some(b => businessInTrouble(b));
   const run = (fn: Parameters<typeof act>[0]) => { const res = act(fn); setLast(res.message); };
+  const ref = useModal<HTMLDivElement>(onClose);
   return (
     <div className="modal-back" onClick={onClose}>
-      <div className="modal dialog" onClick={e => e.stopPropagation()} role="dialog" aria-label={`Parler avec ${fullName(n)}`}>
+      <div ref={ref} className="modal dialog" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Parler avec ${fullName(n)}`}>
         <button className="close" onClick={onClose} aria-label="Fermer">×</button>
         <div className="dialog-head">
           <Crest id={n.id} initials={n.firstName[0] + n.lastName[0]} size={58} />
@@ -61,7 +63,7 @@ export function NpcDialog({ game, npcId, onClose }: { game: Game; npcId: string;
           {(iOwe > 0 || theyOwe > 0) && <div className="debt-line">{iOwe > 0 && <span>Tu lui dois <b>{iOwe} d</b></span>}{theyOwe > 0 && <span>{n.firstName} te doit <b>{theyOwe} d</b></span>}</div>}
         </div>
         <p className="muted small">Activité : {n.activity.note} · Ambition : {ambitionLabel(state, n)}</p>
-        {last && <p className="dialog-result">{last}</p>}
+        {last && <p className="dialog-result" role="status">{last}</p>}
         {err ? <p className="warn">{err}</p> : (
           <>
             <div className="talk-grid">

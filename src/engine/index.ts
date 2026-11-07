@@ -26,3 +26,5 @@ export * from './gangs';
 export * from './nobility';
 export * from './playerPower';
 export * from './family';
+export * from './incidents';
+export * from './approaches';

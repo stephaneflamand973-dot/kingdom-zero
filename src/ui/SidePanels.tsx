@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  toDate, residents, businessesIn, settlementIdOf, aliveCharacters, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
+  activeIncidents, INCIDENT_EFFECTS, INCIDENT_NAMES, toDate, residents, businessesIn, settlementIdOf, aliveCharacters, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
   activeContract, activeLoans, ambitionLabel, quitJob, repayLoan, reputationTags, orgList, landsOf, soldiersOf,
   moodOf, PROFESSION_NAMES, qty, referencePrice, relationLabel, reputation, reputationLabel, SKILL_NAMES, xpForNextLevel,
   type AttrId, type GameState, type ItemId, type SkillId, type WorldEvent,
@@ -14,9 +14,12 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'journal', label: 'Journal' }, { id: 'monde', label: 'Monde' }, { id: 'pouvoir', label: 'Pouvoir' },
 ];
 
-export function SidePanels({ game, onTalk }: { game: Game; onTalk: (id: string) => void }) {
+export type { Tab as SideTab };
+export const SIDE_TABS = TABS.map(t => t.id);
+
+export function SidePanels({ game, onTalk, tab, onTab }: { game: Game; onTalk: (id: string) => void; tab: Tab; onTab: (t: Tab) => void }) {
   const { state } = game;
-  const [tab, setTab] = useState<Tab>('perso');
+  const setTab = onTab;
   return (
     <section className="panel side">
       <nav className="tabs" role="tablist">
@@ -247,6 +250,9 @@ function Monde({ state }: { state: GameState }) {
         {state.settlementOrder.map(id => <button key={id} className={sid === id ? 'on' : ''} onClick={() => setSid(id)}>{state.settlements[id].name.split('-sur-')[0]}</button>)}
       </div>
       <p className="muted small">{st.specialty}</p>
+      {activeIncidents(state, sid).map(i => (
+        <p key={i.id} className={`incident-chip ${i.kind}`}><b>{INCIDENT_NAMES[i.kind]}</b> — {INCIDENT_EFFECTS[i.kind]}{i.toDay > day ? ` · encore ${i.toDay - day} j` : ''}</p>
+      ))}
       <div className="village-stats">
         <div><span>Prospérité</span><b>{st.prosperity}</b><Spark values={hist.map(h => h.prosperity)} /></div>
         <div><span>Habitants</span><b>{pop.length}</b></div>

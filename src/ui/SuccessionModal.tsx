@@ -1,10 +1,12 @@
 import { continueAs, fullName, PROFESSION_NAMES } from '../engine';
 import { Crest } from './icons';
 import type { Game } from './useGame';
+import { useModal } from './a11y';
 
 export function SuccessionModal({ game, onMenu }: { game: Game; onMenu: () => void }) {
   const { state, act } = game;
   const ps = state.pendingSuccession;
+  const ref = useModal<HTMLDivElement>();
   if (!ps) return null;
   const dead = state.characters[ps.deceasedId];
   const label = (id: string) => {
@@ -17,7 +19,7 @@ export function SuccessionModal({ game, onMenu }: { game: Game; onMenu: () => vo
   };
   return (
     <div className="modal-back">
-      <div className="modal succession" role="dialog" aria-label="Succession">
+      <div ref={ref} className="modal succession" role="dialog" aria-modal="true" aria-label="Succession">
         <h2>Fin d'une vie</h2>
         <p>{ps.cause}</p>
         <p className="muted">Le royaume ne s'arrête pas. Qui reprend le flambeau de la lignée {state.dynasty.name} (génération {state.dynasty.generation}) ? Le monde attend ton choix.</p>

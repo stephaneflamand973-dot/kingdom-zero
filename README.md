@@ -1,4 +1,4 @@
-# KINGDOM ZERO — Phase 5 (v0.5.0)
+# KINGDOM ZERO — Phase 6 (v0.6.0)
 
 Simulation de vie médiévale / RPG sandbox systémique. Le **pays de Valcendre** vit sans le joueur :
 trois localités reliées par des routes, environ 48 habitants qui travaillent, achètent, mangent, se lient
@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 75 tests automatisés (scénarios A–G, phases 2 à 5, invariants) |
+| `npm test` | 95 tests automatisés (scénarios A–G, phases 2 à 6, invariants, fuzz) |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
 | `npm run demo` | partie scriptée de bout en bout, affichée dans le terminal |
@@ -63,8 +63,14 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
   playerPower.ts   embuscades et arrestations du joueur, requêtes au seigneur, patrouilles ; cour, mariage,
                    vie au jour le jour (phases 4 et 5)
   family.ts        anniversaires, cour, mariage, naissances, enfance, succession, tutelle, domesticité,
-                   lignée du joueur (phase 5)
+                   lignée du joueur (phase 5) ; dons aux hospices (phase 6)
+  incidents.ts     aléas : sécheresse, belle récolte, grand froid, épidémie, incendie, foire ;
+                   convoi de grain d'urgence (phase 6)
+  approaches.ts    initiatives des PNJ envers le joueur (phase 6)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
+  audio.ts         ambiance sonore procédurale (Web Audio, aucun fichier)
+  a11y.ts, prefs.ts  fenêtres accessibles (focus, Échap), préférences (son, texte, mouvement, contraste)
+  Toasts.tsx, HelpModal.tsx, ErrorBoundary.tsx  notifications, aide et options, filet anti-plantage
 tests/             Vitest
 scripts/           demo et simulation headless
 ```
@@ -268,6 +274,81 @@ adultes, population entre 51 et 56 habitants dont une douzaine d'enfants ; masse
 
 Format de sauvegarde v5 ; les sauvegardes v1 à v4 sont migrées automatiquement (testé).
 
+## Phase 6 — polissage
+
+**Aléas du monde** (`incidents.ts`). Chaque jour, chaque localité peut subir un aléa aux effets mécaniques
+réels et d'une durée limitée : *sécheresse* l'été (rendement des fermes −45 %), *belle récolte* l'automne
+(+40 %), *grand froid* l'hiver (un fagot par jour et par foyer ; sans feu, la santé baisse), *épidémie*
+(risque de maladie ×5, favorisée par les chemins en mauvais état et l'hiver), *incendie* (30 à 60 % des stocks
+d'un atelier détruits, enregistrés comme consommés), *foire annuelle* (trois jours, prix de vente −10 %,
+affluence à la taverne). Les aléas sont annoncés aux habitants, visibles dans la barre du haut, l'onglet Monde
+et l'aide. Sur 8 ans et 3 graines : une foire par localité et par an, 15 à 21 grands froids, 6 à 9 épidémies,
+5 à 8 incendies.
+
+**PNJ qui prennent l'initiative** (`approaches.ts`). Un PNJ présent au même endroit que toi peut t'aborder
+de lui-même, selon son état et votre relation réelle : un ami te glisse une miche quand tu as faim et rien à
+manger (l'objet change vraiment de mains), un créancier te relance après une échéance manquée, un rival
+colérique ou rancunier te bouscule devant témoins, un admirateur se déclare, un patron qui embauche te fait
+signe, un ami t'invite à t'asseoir le soir. Au plus une initiative toutes les quatre heures.
+
+**Équilibrage.** Faire vivre le monde 16 ans sur six graines a révélé des effondrements (jusqu'à
+l'extinction complète) qui existaient déjà avant les aléas. Causes trouvées et corrigées :
+- **une fuite d'argent** : une créance héritée par le débiteur lui-même créait un prêt à soi-même, et un
+  transfert d'une caisse vers elle-même dupliquait la somme ; la dette s'éteint désormais, et le transfert
+  vers soi-même est neutre ;
+- **une boucle embauche-démission** : un ouvrier embauché démissionnait dans l'heure à cause d'arriérés dus
+  par son *ancien* patron, si bien que l'intendance ne gardait jamais de journalier et que les chemins
+  tombaient à 0 ;
+- **une incohérence de registre** : un propriétaire saisi qui travaillait ailleurs perdait son emploi sur sa
+  fiche sans quitter le registre de son patron ;
+- **des puits à argent** : les bénéfices d'une affaire sous tutelle remontent désormais au trésor public ;
+  les plus riches entretiennent jusqu'à trois domestiques et font chaque semaine un don aux hospices de la
+  localité la plus démunie ;
+- **des famines totales** : quand plus rien ne se vend, les affamés cueillent racines, baies et glands en
+  forêt (faible rendement, très faible l'hiver ; c'est une production naturelle comme le bois mort) ; une
+  localité à court de vivres affrète un convoi de grain d'urgence, payé à une localité voisine qui a un vrai
+  surplus (jamais sur ses réserves d'hiver) ;
+- **les chemins** : quand ils se dégradent, les adultes sans emploi doivent la corvée (sans salaire, au prix
+  de leur fatigue), et l'intendance embauche des journaliers plus tôt.
+
+Résultat mesuré sur 16 ans (graines 42, 7, 1234, 99, 5, 2024) : 40 à 59 habitants à la fin, dont 7 à 13
+enfants ; intégrité et bilan monétaire exacts. Les chemins se maintiennent entre 47 et 60. Un débutant laissé
+au pilote automatique survit une année entière dans 12 mondes sur 12.
+
+**Stabilité.** Un test « au hasard » joue des actions valides ou absurdes (déplacements, travail, achats,
+conversations, insultes, sommeil, rencontres, successions) : 4 graines × 300 actions dans la suite de tests, et
+un essai ponctuel de 20 graines × 600 actions (environ 2 500 jours simulés, 21 successions) sans aucune erreur,
+fuite d'argent ou d'objet ; la sauvegarde reste fidèle après ce chaos. Côté interface, une erreur du moteur
+pendant une action est rattrapée et racontée dans le récit, et une erreur d'affichage montre un écran de
+secours au lieu d'une page blanche.
+
+**Ambiance sonore** (`audio.ts`). Tout est synthétisé dans le navigateur, sans aucun fichier : vent filtré
+(plus fort l'hiver), oiseaux le jour au printemps et en été, grillons les nuits d'été, rumeur et chopes à la
+taverne, enclume à la forge ; petits bruitages pour une action réussie, refusée, une pièce qui change de
+main, une cloche pour un fait grave. Le son démarre au premier clic ou à la première touche (règle des
+navigateurs) et se coupe d'un clic ou avec la touche S.
+
+**Animations et notifications.** Le pion du joueur glisse d'un lieu à l'autre sur la carte ; les faits qui te
+concernent (dont tu es acteur, cible ou témoin) apparaissent en notifications colorées (bonne nouvelle,
+mauvaise, fait majeur) qui s'effacent seules. Tout respecte la préférence système « réduire les animations »,
+ou le réglage du joueur.
+
+**Ergonomie.** Raccourcis clavier (M manger, B boire, A attendre, J jusqu'à la prochaine étape, D dormir,
+V vivre une semaine, 1–8 onglets, S son, P partie, ? aide, Échap fermer), indiqués sur les boutons. Une aide
+« Premiers pas » propose huit repères calculés sur l'état réel (premiers deniers, réserves, emploi stable,
+un ami, un toit, une autre localité, 100 d d'épargne, un foyer) et l'objectif suivant s'affiche sous les
+actions. Nouvelle action : cueillir racines et baies au bois.
+
+**Accessibilité.** Fenêtres modales avec focus initial, piège de tabulation, Échap et retour du focus ;
+lien d'évitement vers les actions ; récit et notifications annoncés aux lecteurs d'écran (`aria-live`) ;
+jauges exposées comme compteurs ; focus visible au clavier sur la carte et les boutons ; taille du texte
+100/115/130 %, contraste renforcé, animations réduites ; plus de défilement horizontal sur téléphone.
+
+**Performances.** Environ 11 à 14 ms par jour simulé (≈ 50 habitants, mesuré sur une machine seule) ; une
+saison entière au pilote automatique se calcule en moins d'une demi-seconde.
+
+Format de sauvegarde v6 ; les sauvegardes v1 à v5 sont migrées automatiquement (testé).
+
 ## État réel du développement
 
 ### Implémenté et testé
@@ -309,9 +390,14 @@ héritage du joueur ; combat au tour par tour ; intégration optionnelle d’un 
 les dialogues (le moteur restera l’autorité sur les faits).
 
 ### Limites connues
-- L’argent tend à se concentrer chez les épargnants (pas encore d’investissement ni de prêt) et
-  les salaires glissent vers le plancher sur le long terme.
-- Les routes s’usent plus vite que les travaux publics ne les réparent sur 2 ans.
+- L’argent tend encore à se concentrer chez les épargnants ; domesticité et dons aux hospices le font
+  recirculer, sans investissement à proprement parler. Les salaires glissent vers le plancher.
+- Le convoi de grain d'urgence arrive le jour même (il ne voyage pas physiquement sur la route) et les vivres
+  de disette sont comptés comme du grain.
+- Le son est volontairement simple (synthèse) et n'est vérifié automatiquement que par l'absence d'erreur ;
+  son rendu dépend du navigateur.
+- Un débutant au pilote automatique survit, mais reste pauvre et souvent sans emploi stable : progresser
+  demande de jouer.
 - Le chômage est structurel (environ 30 à 45 %) : l’économie fermée ne crée pas assez de demande pour tous.
 - Beaucoup de démissions viennent de salaires impayés : les petites entreprises vivent au jour le jour.
 - Le trésor du village est souvent trop maigre pour offrir la bière des fêtes.
@@ -319,11 +405,9 @@ les dialogues (le moteur restera l’autorité sur les faits).
   est large, les caravanes ne partent que lorsqu'une pénurie creuse les prix.
 - Les marchands s'endettent souvent et finissent saisis par leurs créanciers : leurs expéditions sont
   risquées, et la même histoire se répète d'une partie à l'autre.
-- Les chemins se dégradent encore plus vite que l'intendance ne les répare.
 - Guerres et révoltes sont possibles mais rares : les conditions (rancune, supériorité, grogne durable) se
   réunissent peu souvent en deux ans simulés.
 - Le joueur ne peut pas encore lever ses propres troupes, rejoindre la bande ni prendre part à une bataille.
 - Pas d'armes ni d'armures : la force d'un combattant ne dépend que de lui.
-- Une famine au milieu de l'abondance reste possible quand plus personne n'embauche : l'aumône seigneuriale
-  et la soupe populaire en limitent les effets.
-- Pas de son ni d’animations au-delà des transitions CSS.
+- Des disettes locales restent possibles (morts de faim isolées, surtout l'hiver) ; la cueillette, la soupe
+  populaire, les convois et l'aide seigneuriale empêchent désormais l'effondrement sur les 16 ans mesurés.

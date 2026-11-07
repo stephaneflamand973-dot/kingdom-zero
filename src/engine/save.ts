@@ -69,6 +69,8 @@ const MIGRATIONS: Record<number, (s: GameState) => GameState> = {
     s.dynasty ??= { name: s.characters[s.playerId].lastName, generation: 1, heads: [{ id: s.playerId, from: 0 }] };
     return s;
   },
+  // v5 → v6 (phase 6) : aléas du monde
+  5: s => { s.incidents ??= []; return s; },
 };
 
 export function deserialize(text: string): { state?: GameState; error?: string; savedAt?: string } {

@@ -244,7 +244,8 @@ export function transferBusiness(state: GameState, b: Business, newOwner: Charac
   b.ownerId = newOwner.id;
   if (!newOwner.employerId) newOwner.employerId = b.id; // un propriétaire déjà employé ailleurs devient rentier
   if (!newOwner.isPlayer) newOwner.ambition = { kind: 'faire_fortune', since: state.time };
-  if (oldOwner && oldOwner.alive) {
+  // un ancien propriétaire salarié ailleurs garde ce travail-là (sinon fiche et registre du patron divergent)
+  if (oldOwner && oldOwner.alive && (!oldOwner.employerId || oldOwner.employerId === b.id)) {
     oldOwner.employerId = undefined;
     oldOwner.profession = 'sans_emploi';
     oldOwner.goal = { kind: 'trouver_emploi' };

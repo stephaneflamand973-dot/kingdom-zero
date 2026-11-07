@@ -1,6 +1,7 @@
 import { encounterAction, fullName, type EncounterChoice } from '../engine';
 import { Crest } from './icons';
 import type { Game } from './useGame';
+import { useModal } from './a11y';
 
 const CHOICES: Record<'bandits' | 'arrest', { c: EncounterChoice; label: string; hint: string; danger?: boolean }[]> = {
   bandits: [
@@ -21,11 +22,12 @@ const CHOICES: Record<'bandits' | 'arrest', { c: EncounterChoice; label: string;
 export function EncounterModal({ game }: { game: Game }) {
   const { state, act } = game;
   const e = state.encounter;
+  const ref = useModal<HTMLDivElement>();
   if (!e) return null;
   const p = state.characters[state.playerId];
   return (
     <div className="modal-back">
-      <div className="modal encounter" role="dialog" aria-label={e.kind === 'bandits' ? 'Embuscade' : 'Arrestation'}>
+      <div ref={ref} className="modal encounter" role="alertdialog" aria-modal="true" aria-label={e.kind === 'bandits' ? 'Embuscade' : 'Arrestation'}>
         <h2>{e.kind === 'bandits' ? 'Embuscade !' : 'Au nom de la loi'}</h2>
         <p className="muted small">{e.kind === 'bandits' ? `Sur ${state.locations[e.roadId ?? p.locationId].name} · ils réclament ${e.demand} d · tu as ${p.money} d` : `Prime sur ta tête : ${state.wanted.find(w => w.characterId === p.id)?.bounty ?? 0} d`}</p>
         <div className="fighters">
@@ -45,7 +47,7 @@ export function EncounterModal({ game }: { game: Game }) {
           })}
         </div>
         {game.feed[0] && <p className="dialog-result">{game.feed[0].text}</p>}
-        <ol className="combat-log">
+        <ol className="combat-log" aria-live="polite">
           {e.log.slice(-6).map((l, i) => <li key={i}>{l}</li>)}
         </ol>
         <div className="talk-grid">

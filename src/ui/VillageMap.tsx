@@ -113,7 +113,11 @@ function LocalMap({ state, onTravel, onSelect }: { state: GameState; onTravel: (
     const other = state.settlements[o];
     const ang = Math.atan2(other.y - st.y, other.x - st.x);
     const x = 500 + Math.cos(ang) * 440, y = 320 + Math.sin(ang) * 270;
-    return { id: o, name: other.name, x: Math.max(70, Math.min(930, x)), y: Math.max(40, Math.min(600, y)), minutes: travelMinutes(state, p.locationId, other.squareId), squareId: other.squareId };
+    let ex = Math.max(70, Math.min(930, x)), ey = Math.max(40, Math.min(600, y));
+    // écarte le panneau d'un lieu trop proche (étiquettes superposées)
+    const hits = (yy: number) => locs.some(l => Math.abs(l.x - ex) < 110 && Math.abs(l.y - yy) < 75);
+    if (hits(ey)) ey = [ey + 80, ey - 80, ey + 140, ey - 140].find(yy => yy >= 90 && yy <= 600 && !hits(yy)) ?? ey;
+    return { id: o, name: other.name, x: ex, y: ey, minutes: travelMinutes(state, p.locationId, other.squareId), squareId: other.squareId };
   });
   const good = st.infrastructure > 40;
   return (
@@ -166,10 +170,16 @@ function LocalMap({ state, onTravel, onSelect }: { state: GameState; onTravel: (
                 const ang = -Math.PI / 2 + (i - (Math.min(occupants.length, 12) - 1) / 2) * 0.34;
                 return <circle key={c.id} cx={Math.cos(ang) * 39} cy={Math.sin(ang) * 39} r="5" fill={ACTIVITY_COLOR[c.activity.kind]} stroke="#2a1c10" strokeWidth="1.2"><title>{`${fullName(c)} — ${c.activity.note ?? c.activity.kind}`}</title></circle>;
               })}
-              {here && <g className="player-pin" transform="translate(0 -30)"><path d="M0 0 L-9 -16 A10 10 0 1 1 9 -16 Z" fill="#a8322d" stroke="#f3e6c4" strokeWidth="2" /><circle cy="-19" r="4" fill="#f3e6c4" /></g>}
             </g>
           );
         })}
+        {locs.some(l => l.id === p.locationId) && (() => {
+          const l = state.locations[p.locationId];
+          // le pion se déplace en glissant d'un lieu à l'autre (désactivé si mouvement réduit)
+          return <g className="player-token" style={{ transform: `translate(${l.x}px, ${l.y - 30}px)` }} pointerEvents="none" aria-hidden="true">
+            <g className="player-pin"><path d="M0 0 L-9 -16 A10 10 0 1 1 9 -16 Z" fill="#a8322d" stroke="#f3e6c4" strokeWidth="2" /><circle cy="-19" r="4" fill="#f3e6c4" /></g>
+          </g>;
+        })()}
         <g transform="translate(940 580)" opacity="0.7">
           <circle r="26" fill="none" stroke="#6b5434" strokeWidth="1.5" />
           <path d="M0 -24 L5 0 L0 24 L-5 0 Z" fill="#6b5434" /><path d="M-24 0 L0 -5 L24 0 L0 5 Z" fill="#8a6d45" />

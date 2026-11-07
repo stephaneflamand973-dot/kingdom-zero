@@ -13,7 +13,7 @@ import { compatibility, getRelation, modifyRelation } from './social';
 import { initialAmbition } from './society';
 import { DAYS_PER_YEAR, toDate } from './time';
 import type { AttrId, Character, GameState, ItemId, SkillId, TraitId } from './types';
-import { aliveCharacters, businessesIn, clamp, fullName, newId, npcs, qty, residents, settlementIdOf } from './util';
+import { aliveCharacters, businessesIn, clamp, fullName, hasTrait, newId, npcs, qty, residents, settlementIdOf } from './util';
 
 export const ADULT_AGE = 14;
 export const PREGNANCY_DAYS = 70;
@@ -311,7 +311,11 @@ export function settleEstate(state: GameState, c: Character): boolean {
     if (pr.ownerId === c.id) pr.ownerId = main.id;
     if (pr.tenantId === c.id) { pr.tenantId = undefined; pr.rentDueDay = undefined; }
   }
-  for (const l of state.loans) if (l.status === 'active' && l.lenderId === c.id) l.lenderId = main.id;
+  for (const l of state.loans) {
+    if (l.status !== 'active' || l.lenderId !== c.id) continue;
+    // l'héritier qui devait de l'argent au défunt hérite de sa propre créance : la dette s'éteint
+    if (l.borrowerId === main.id) { l.status = 'repaid'; l.remaining = 0; } else l.lenderId = main.id;
+  }
   for (const b of ownedBusinesses(state, c)) {
     b.employees = b.employees.filter(id => id !== main.id);
     if (main.employerId === b.id) main.employerId = undefined;
@@ -378,7 +382,9 @@ export function dailyServants(state: GameState): void {
     transferMoney(state, P.c(m.id), P.c(s.id), SERVANT_PAY);
   }
   for (const m of npcs(state)) {
-    if (m.money <= 300 || isChild(m) || npcs(state).some(x => x.masterId === m.id)) continue;
+    // phase 6 : plus on est riche, plus on entretient de domestiques (jusqu'à trois)
+    const staff = npcs(state).filter(x => x.masterId === m.id).length;
+    if (m.money <= 300 || isChild(m) || staff >= Math.min(3, Math.floor(m.money / 350))) continue;
     const sid = settlementIdOf(state, m.homeId);
     const s = residents(state, sid)
       .filter(x => x.id !== m.id && !x.employerId && !x.masterId && !isChild(x) && x.age < 65 && x.profession !== 'seigneur' && (x.jailedUntil ?? 0) <= state.time)
@@ -390,5 +396,27 @@ export function dailyServants(state: GameState): void {
     modifyRelation(state, s.id, m.id, 6, 4);
     logEvent(state, { type: 'hire', actorId: m.id, targetId: s.id, importance: 2, locationId: m.homeId,
       text: `${fullName(m)} prend ${fullName(s)} à son service comme domestique (${SERVANT_PAY} d par jour).`, witnesses: [m.id, s.id] });
+  }
+}
+
+/**
+ * Phase 6 — Dons aux hospices : une fortune qui dort appauvrit le pays. Chaque lundi, les PNJ très
+ * aisés donnent une part de leur excédent à l'intendance la plus démunie de la région, qui s'en sert
+ * pour la soupe populaire, les aumônes et l'embauche de journaliers (entretien des chemins).
+ */
+export const PATRON_THRESHOLD = 700;
+export function weeklyPatronage(state: GameState): void {
+  const manors = state.settlementOrder.map(id => state.businesses[state.settlements[id].manorId]);
+  for (const c of npcs(state)) {
+    if (c.money <= PATRON_THRESHOLD || isChild(c)) continue;
+    const rate = hasTrait(c, 'genereux') ? 0.2 : hasTrait(c, 'avare') ? 0.04 : 0.1;
+    const gift = Math.floor((c.money - PATRON_THRESHOLD) * rate);
+    if (gift < 5) continue;
+    const target = manors.slice().sort((a, b) => a.treasury - b.treasury || (a.id < b.id ? -1 : 1))[0];
+    if (!transferMoney(state, P.c(c.id), P.b(target.id), gift)) continue;
+    const st = state.settlements[settlementIdOf(state, target.locationId)];
+    for (const r of residents(state, st.id)) if (r.id !== c.id) modifyRelation(state, r.id, c.id, 1, 1);
+    logEvent(state, { type: 'help', actorId: c.id, importance: 2, locationId: st.squareId,
+      text: `${fullName(c)} fait don de ${gift} d aux hospices de ${st.name}.`, witnesses: residents(state, st.id).map(r => r.id).concat(c.id) });
   }
 }

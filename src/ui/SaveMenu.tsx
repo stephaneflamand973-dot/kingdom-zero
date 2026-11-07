@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { deserialize, formatClock, formatDate, loadFromStore, saveToStore, serialize, slotInfo } from '../engine';
 import type { Game } from './useGame';
+import { useModal } from './a11y';
 
 const SLOTS = ['auto', 'slot1', 'slot2', 'slot3'];
 const SLOT_NAME: Record<string, string> = { auto: 'Sauvegarde automatique', slot1: 'Emplacement I', slot2: 'Emplacement II', slot3: 'Emplacement III' };
@@ -12,6 +13,7 @@ export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void })
   const [exported, setExported] = useState<string | null>(null);
   const [, force] = useState(0);
   const file = useRef<HTMLInputElement>(null);
+  const ref = useModal<HTMLDivElement>(onClose);
 
   const doSave = (slot: string) => {
     if (!store) return setMsg('Le stockage local du navigateur est indisponible : utilise l’export de fichier.');
@@ -41,7 +43,7 @@ export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void })
 
   return (
     <div className="modal-back" onClick={onClose}>
-      <div className="modal save" onClick={e => e.stopPropagation()} role="dialog" aria-label="Menu de la partie">
+      <div ref={ref} className="modal save" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Menu de la partie">
         <button className="close" onClick={onClose} aria-label="Fermer">×</button>
         <h2>Registre de la partie</h2>
         <p className="muted small">Graine du monde : {state.seed} · Format de sauvegarde v{state.version} · contrôle d’intégrité à chaque chargement.</p>
@@ -69,7 +71,7 @@ export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void })
         </div>
         {confirmNew && <p className="muted small">La partie en cours non sauvegardée sera perdue. <button className="link" onClick={() => setConfirmNew(false)}>Annuler</button></p>}
         {exported && <textarea id="export-save" className="export-box" readOnly value={exported} onFocus={e => e.currentTarget.select()} />}
-        {msg && <p className="dialog-result">{msg}</p>}
+        {msg && <p className="dialog-result" role="status">{msg}</p>}
       </div>
     </div>
   );

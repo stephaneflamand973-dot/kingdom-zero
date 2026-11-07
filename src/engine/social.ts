@@ -73,12 +73,14 @@ export function applyBeliefEffect(state: GameState, knowerId: string, ev: WorldE
 export function shareRumor(state: GameState, speaker: Character, listener: Character): WorldEvent | undefined {
   const rel = getRelation(state, speaker.id, listener.id);
   if (rel.affinity < -20) return undefined; // on ne se confie pas à un ennemi
-  const candidates = speaker.knownEvents
-    .filter(id => !listener.knownEvents.includes(id))
-    .map(id => getEvent(state, id))
-    .filter((e): e is WorldEvent => !!e && e.importance >= 2 && e.type !== 'rumor')
+  const known = new Set(listener.knownEvents);
+  const candidates: WorldEvent[] = [];
+  for (const id of speaker.knownEvents) {
+    if (known.has(id)) continue;
+    const e = getEvent(state, id);
     // ne pas colporter de ragots sur l'auditeur lui-même
-    .filter(e => e.actorId !== listener.id || e.type === 'death');
+    if (e && e.importance >= 2 && e.type !== 'rumor' && (e.actorId !== listener.id || e.type === 'death')) candidates.push(e);
+  }
   if (!candidates.length) return undefined;
   // les nouvelles les plus graves et récentes circulent en priorité
   candidates.sort((a, b) => b.importance - a.importance || b.time - a.time);

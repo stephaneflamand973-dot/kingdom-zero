@@ -292,18 +292,19 @@ export function train(state: GameState): ActionResult {
 }
 
 /** Ramasser du bois mort en lisière : maigre revenu mais accessible à tous. */
-export function forage(state: GameState, hours: number): ActionResult {
+export function forage(state: GameState, hours: number, item: 'wood' | 'grain' = 'wood'): ActionResult {
   const g = guard(state); if (g) return g;
   const p = player(state);
-  if (state.locations[p.locationId].kind !== 'woodlot') return no('Le bois mort se ramasse au Bois de la Combe.');
+  if (state.locations[p.locationId].kind !== 'woodlot') return no(item === 'wood' ? 'Le bois mort se ramasse au Bois de la Combe.' : 'Racines et baies se cherchent en forêt.');
   const d = toDate(state.time);
   if (d.hour < 6 || d.hour >= 20) return no('Il fait trop sombre pour ramasser du bois.');
   if (p.needs.energy < 15) return no('Tu es trop épuisé.');
   const h = Math.max(1, Math.min(Math.floor(hours), 20 - d.hour));
-  const before = qty(p.inventory, 'wood');
-  p.activity = { kind: 'forage', locationId: p.locationId, since: state.time, note: 'Ramasse du bois mort' };
+  const before = qty(p.inventory, item);
+  p.activity = { kind: 'forage', locationId: p.locationId, since: state.time, note: item === 'wood' ? 'Ramasse du bois mort' : 'Cherche racines et baies', item };
   finish(state, p, h * 60);
-  const got = qty(p.inventory, 'wood') - before;
+  const got = qty(p.inventory, item) - before;
+  if (item === 'grain') return ok(`Tu fouilles les sous-bois pendant ${h} h : ${got ? `de quoi faire ${got} ration${got > 1 ? 's' : ''} de bouillie (comptée comme grain)` : 'presque rien, la forêt est avare en cette saison'}.`, h * 60);
   return ok(`Tu ramasses du bois mort pendant ${h} h : ${got} fagot${got > 1 ? 's' : ''}.${got === 0 ? ' Le bois sec se fait rare sous tes doigts inexpérimentés.' : ''}`, h * 60);
 }
 

@@ -3,6 +3,7 @@
 // Invariant : l'argent et les objets ne sont jamais créés lors d'un échange ;
 // seule la production (recettes) crée des biens et seule la consommation en détruit.
 // ─────────────────────────────────────────────────────────────
+import { incidentPrice, incidentYield } from './incidents';
 import { ITEMS, RECIPES, TOOL_WEAR_PER_TOOL, PROFESSION_BY_BUSINESS, WORK_SKILL } from './data';
 import { logEvent } from './events';
 import { SEASON_YIELD, toDate } from './time';
@@ -38,6 +39,8 @@ export function transferMoney(state: GameState, from: Party, to: Party, amount: 
   if (amount === 0) return true;
   const a = holder(state, from), b = holder(state, to);
   if (a.money < amount) return false;
+  // transfert vers soi-même : sans effet (sinon la seconde écriture, faite sur une valeur périmée, créerait de l'argent)
+  if (from.t === to.t && from.id === to.id) return true;
   a.set(a.money - amount);
   b.set(b.money + amount);
   return true;
@@ -71,11 +74,12 @@ function pressure(b: Business, item: ItemId): number {
 }
 
 /** Prix demandé par l'établissement (offre/demande locale via le stock). */
-export function askPrice(_state: GameState, b: Business, item: ItemId): number {
+export function askPrice(state: GameState, b: Business, item: ItemId): number {
   const base = ITEMS[item].base;
   let p = base * clamp(Math.sqrt(pressure(b, item)), 0.6, 2.6);
   if (b.kind === 'market') p *= 1.15;                   // marge du revendeur
   if (b.kind === 'tavern' && item === 'bread') p *= 1.3; // repas servi
+  p *= incidentPrice(state, b);                          // foire (phase 6)
   return Math.max(1, Math.round(p));
 }
 
@@ -142,7 +146,7 @@ export function runProduction(state: GameState, b: Business): number {
   if (!r) return 0;
   const d = toDate(state.time);
   // Saison (pour les cultures) et spécialisation de la localité (terres, filons)
-  const mult = (r.seasonal ? SEASON_YIELD[d.season] : 1) * (businessSettlement(state, b).yields[b.kind] ?? 1);
+  const mult = (r.seasonal ? SEASON_YIELD[d.season] : 1) * (businessSettlement(state, b).yields[b.kind] ?? 1) * incidentYield(state, b);
   const effLabor = r.labor / mult;
   let batches = 0;
   while (b.laborPool >= effLabor) {
@@ -287,6 +291,14 @@ export function manageBusiness(state: GameState, b: Business, procurementOnly = 
       const inject = Math.min(owner.money - comfort, reserve - b.treasury);
       if (inject > 0) transferMoney(state, P.c(owner.id), P.b(b.id), inject);
     }
+  } else if (!owner && b.kind !== 'manor' && b.treasury > reserve * 1.5) {
+    // Affaire sous tutelle (phase 6) : les bénéfices remontent aux caisses publiques au lieu de dormir
+    // (sans quoi l'argent du village s'y accumule et la population s'appauvrit jusqu'à la famine)
+    const manorId = businessSettlement(state, b).manorId;
+    const surplus = Math.floor(b.treasury - reserve * 1.2);
+    if (surplus > 0 && manorId !== b.id && transferMoney(state, P.b(b.id), P.b(manorId), surplus)) {
+      logEvent(state, { type: 'tax', businessId: b.id, importance: 1, text: `L'intendance verse au trésor public ${surplus} d de bénéfices de ${b.name}, sous sa tutelle.` });
+    }
   }
 
   // 4. Embauche / licenciement selon la trésorerie et la demande
@@ -304,7 +316,7 @@ export function manageBusiness(state: GameState, b: Business, procurementOnly = 
   const outputs = b.sells.filter(i => RECIPES[b.kind]?.outputs[i]);
   const overproducing = outputs.length > 0 && outputs.every(i => qty(b.stock, i) > (b.targets[i] ?? 0) * 2.5);
   const cannotPay = isManor
-    ? b.treasury < 140 && b.employees.some(id => state.characters[id].profession === 'journalier')
+    ? b.treasury < (businessSettlement(state, b).infrastructure < 45 ? 70 : 140) && b.employees.some(id => state.characters[id].profession === 'journalier')
     : b.treasury < b.wage * 8 * b.employees.length;
   if (isHiring(state, b)) {
     if (hireBest(state, b)) b.lastStaffChangeDay = day;
@@ -323,7 +335,11 @@ export function isHiring(state: GameState, b: Business): boolean {
   if (b.employees.length >= b.maxWorkers) return false;
   const day = toDate(state.time).day;
   if (day - b.lastStaffChangeDay < 2) return false;
-  if (b.kind === 'manor') return b.treasury > 380 + b.employees.length * 70;
+  if (b.kind === 'manor') {
+    // phase 6 : des chemins en mauvais état font embaucher des journaliers plus tôt
+    const roadsBad = businessSettlement(state, b).infrastructure < 45;
+    return b.treasury > (roadsBad ? 150 : 380) + b.employees.length * (roadsBad ? 50 : 70);
+  }
   const outputs = b.sells.filter(i => RECIPES[b.kind]?.outputs[i]);
   const underproducing = outputs.some(i => qty(b.stock, i) < (b.targets[i] ?? 0));
   // une caisse qui déborde fait travailler du monde, même sans pénurie (phase 5 : éviter la spirale déflationniste)
@@ -346,6 +362,8 @@ export function hireBest(state: GameState, b: Business, candidates?: Character[]
   const hired = scored[0].c;
   hired.employerId = b.id;
   hired.jobSince = toDate(state.time).day;
+  // les arriérés d'un ancien employeur ne concernent pas le nouveau (sinon : démission immédiate en boucle)
+  hired.unpaidWages = 0;
   hired.profession = role ?? (b.kind === 'manor' ? 'journalier' : PROFESSION_BY_BUSINESS[b.kind]);
   hired.goal = { kind: 'epargner', target: hired.money + 150 };
   b.employees.push(hired.id);
@@ -364,6 +382,7 @@ export function fireEmployee(state: GameState, b: Business, e: Character, reason
   b.employees = b.employees.filter(id => id !== e.id);
   e.employerId = undefined;
   e.profession = 'sans_emploi';
+  e.unpaidWages = 0; // l'arriéré est perdu : personne ne le réclamera plus (simple compteur, aucun denier en jeu)
   e.goal = { kind: 'trouver_emploi' };
   if (b.ownerId) modifyRelation(state, e.id, b.ownerId, quit ? -6 : -12, quit ? -10 : -6);
   logEvent(state, {

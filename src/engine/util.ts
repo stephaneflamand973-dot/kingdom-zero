@@ -15,7 +15,9 @@ export function fullName(c: Character): string { return `${c.firstName} ${c.last
 export function player(state: GameState): Character { return state.characters[state.playerId]; }
 
 export function aliveCharacters(state: GameState): Character[] {
-  return state.characterOrder.map(id => state.characters[id]).filter(c => c.alive);
+  const out: Character[] = [];
+  for (const id of state.characterOrder) { const c = state.characters[id]; if (c.alive) out.push(c); }
+  return out;
 }
 export function npcs(state: GameState): Character[] {
   return aliveCharacters(state).filter(c => !c.isPlayer);
@@ -54,7 +56,12 @@ export function businessSettlement(state: GameState, b: Business): Settlement {
   return settlementOf(state, b.locationId);
 }
 export function businessesIn(state: GameState, settlementId: string): Business[] {
-  return allBusinesses(state).filter(b => settlementIdOf(state, b.locationId) === settlementId);
+  const out: Business[] = [];
+  for (const id of state.businessOrder) {
+    const b = state.businesses[id];
+    if ((state.locations[b.locationId]?.settlementId ?? 'valcendre') === settlementId) out.push(b);
+  }
+  return out;
 }
 export function locationsIn(state: GameState, settlementId: string, kind?: Location['kind']): Location[] {
   return state.locationOrder.map(id => state.locations[id]).filter(l => l.settlementId === settlementId && (!kind || l.kind === kind));

@@ -225,7 +225,20 @@ function buyFood(state: GameState, c: Character, b: Business, price: number, ite
   }
 }
 
+/** Phase 6 — vivres de disette : racines, baies, glands. Dernier recours quand plus rien ne se vend. */
+function gatherFood(state: GameState, c: Character, hour: number): boolean {
+  if (hour < 6 || hour >= 19 || c.needs.energy < 12 || c.age < 8) return false;
+  const wood = locationsIn(state, homeSettlement(state, c).id, 'woodlot')[0];
+  if (!wood) return false;
+  setActivity(state, c, 'forage', wood.id, 'Cherche racines et baies en forêt');
+  c.activity.item = 'grain';
+  return true;
+}
+
 function seekHelp(state: GameState, c: Character, hour: number): void {
+  // 0. Plus rien à vendre dans la localité : on part chercher sa pitance en forêt
+  const forSale = sellersOf(state, 'bread', hour, c, true).length + sellersOf(state, 'grain', hour, c, true).length;
+  if (forSale === 0 && gatherFood(state, c, hour)) return;
   // 1. Demander à l'ami le plus proche qui a de quoi donner
   const friends = Object.entries(c.relations)
     .filter(([id, r]) => r.affinity >= 10 && state.characters[id]?.alive && !state.characters[id].isPlayer)
@@ -286,6 +299,7 @@ function seekHelp(state: GameState, c: Character, hour: number): void {
       return;
     }
   }
+  if (c.needs.hunger >= 70 && gatherFood(state, c, hour)) return;
   setActivity(state, c, 'idle', c.homeId, hour < 20 ? 'Affamé et sans le sou' : 'Affamé, tente de dormir');
 }
 
