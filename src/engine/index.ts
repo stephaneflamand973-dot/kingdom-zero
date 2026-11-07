@@ -25,3 +25,4 @@ export * from './justice';
 export * from './gangs';
 export * from './nobility';
 export * from './playerPower';
+export * from './family';

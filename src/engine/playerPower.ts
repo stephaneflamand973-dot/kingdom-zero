@@ -13,7 +13,8 @@ import { houseOf, joinOrg, orgList, orgsOf } from './orgs';
 import { finish, guard } from './player';
 import { chance, rand } from './rng';
 import { advanceTime, killCharacter, recordPrices } from './sim';
-import { getRelation, modifyRelation } from './social';
+import { compatibility, getRelation, modifyRelation } from './social';
+import { kin, wed } from './family';
 import { MIN_PER_DAY, formatDuration } from './time';
 import type { ActionResult, Character, GameState, Organization } from './types';
 import { activeContract } from './contracts';
@@ -393,4 +394,66 @@ export function patrol(state: GameState, hours: number): ActionResult {
   const h = Math.max(1, Math.min(8, Math.floor(hours)));
   finish(state, p, h * 60);
   return ok(`Tu patrouilles ${formatDuration(h * 60)} (${house.service[p.id] ?? 0} h cette semaine).${caught}`, h * 60);
+}
+
+// ── Famille du joueur (phase 5) ─────────────────────────────
+
+/** Faire la cour : l'attirance grandit selon le charme, la conversation et l'entente. */
+export function court(state: GameState, npcId: string): ActionResult {
+  const g = guard(state); if (g) return g;
+  const p = player(state);
+  const n = state.characters[npcId];
+  if (!n?.alive || n.locationId !== p.locationId || n.activity.kind === 'sleep') return no('Cette personne n’est pas là.');
+  if (p.age < 16 || n.age < 16) return no('Vous êtes trop jeunes.');
+  if (p.spouseId) return no('Tu es marié.');
+  if (n.spouseId) return no(`${n.firstName} est déjà marié${n.sex === 'F' ? 'e' : ''}.`);
+  if (kin(state, p, n)) return no('Ce serait inconvenant : vous êtes de la même famille.');
+  const r = getRelation(state, n.id, p.id);
+  if (r.affinity < 25) {
+    modifyRelation(state, n.id, p.id, -3, -1);
+    finish(state, p, 15);
+    return ok(`${n.firstName} trouve tes avances déplacées : vous vous connaissez à peine. (affinité −3)`, 15);
+  }
+  const gain = Math.max(0, Math.round(4 + (p.attributes.charisme - 5) * 1.5 + p.skills.diplomatie / 15 + compatibility(p, n) * 6 + (r.affinity - 25) / 8 + rand(state) * 4 - 2));
+  const rel = n.relations[p.id] ?? (n.relations[p.id] = { affinity: 0, trust: 0, lastInteraction: state.time });
+  rel.romance = Math.min(100, (rel.romance ?? 0) + gain);
+  modifyRelation(state, n.id, p.id, 2, 1);
+  p.needs.social = clamp(p.needs.social + 10, 0, 100);
+  finish(state, p, 30);
+  const rm = rel.romance;
+  const mood = rm >= 70 ? 'rougit et ne cache plus son inclination' : rm >= 40 ? 'sourit volontiers à tes attentions' : rm >= 15 ? 'semble flatté' + (n.sex === 'F' ? 'e' : '') : 'reste sur la réserve';
+  return ok(`Tu fais la cour à ${n.firstName}, qui ${mood}. (attirance ${rm}/100)`, 30);
+}
+
+export function proposeMarriage(state: GameState, npcId: string): ActionResult {
+  const g = guard(state); if (g) return g;
+  const p = player(state);
+  const n = state.characters[npcId];
+  if (!n?.alive || n.locationId !== p.locationId) return no('Cette personne n’est pas là.');
+  if (p.spouseId || n.spouseId || kin(state, p, n) || p.age < 16 || n.age < 16) return no('Ce mariage est impossible.');
+  const r = getRelation(state, n.id, p.id);
+  if ((r.romance ?? 0) < 70 || r.affinity < 50 || r.trust < 30) {
+    finish(state, p, 15);
+    return ok(`${n.firstName} décline : « Pas encore. » (attirance ${r.romance ?? 0}/70, affinité ${r.affinity}/50, confiance ${r.trust}/30)`, 15);
+  }
+  wed(state, p, n);
+  finish(state, p, 120);
+  return ok(`${n.firstName} accepte ! Les noces sont célébrées. Vous partagez désormais un foyer${p.homeId === n.homeId ? ` (${state.locations[p.homeId].name})` : ''}.`, 120);
+}
+
+/** Vivre au jour le jour : l'IA conduit le joueur ; s'interrompt en cas de rencontre, de mort ou de fin. */
+export function liveDays(state: GameState, days: number): ActionResult {
+  const g = guard(state); if (g) return g;
+  const p = player(state);
+  const money0 = p.money, t0 = state.time, seq0 = state.eventSeq;
+  state.autopilotUntil = state.time + days * MIN_PER_DAY;
+  for (let i = 0; i < days * 24; i++) {
+    advanceTime(state, 60);
+    if (state.encounter || state.gameOver || state.pendingSuccession) break;
+  }
+  state.autopilotUntil = undefined;
+  const elapsed = state.time - t0;
+  const mine = state.events.filter(e => Number(e.id.slice(1)) > seq0 && e.importance >= 2 && (e.actorId === p.id || e.targetId === p.id || p.knownEvents.includes(e.id)));
+  const why = state.encounter ? ' Un imprévu interrompt le cours des jours.' : state.pendingSuccession ? ' La mort t’a surpris.' : '';
+  return ok(`${formatDuration(elapsed)} passent au fil des jours. Bourse : ${money0} → ${p.money} d.${mine.length ? ` Faits marquants : ${mine.slice(-4).map(e => e.text).join(' ')}` : ''}${why}`, elapsed);
 }

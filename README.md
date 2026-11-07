@@ -1,4 +1,4 @@
-# KINGDOM ZERO — Phase 4 (v0.4.0)
+# KINGDOM ZERO — Phase 5 (v0.5.0)
 
 Simulation de vie médiévale / RPG sandbox systémique. Le **pays de Valcendre** vit sans le joueur :
 trois localités reliées par des routes, environ 48 habitants qui travaillent, achètent, mangent, se lient
@@ -19,7 +19,8 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 62 tests automatisés (scénarios A–G, phases 2 à 4, invariants) |
+| `npm test` | 75 tests automatisés (scénarios A–G, phases 2 à 5, invariants) |
+| `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
 | `npm run demo` | partie scriptée de bout en bout, affichée dans le terminal |
 | `npm run sim -- 224 42` | simulation headless : 224 jours, graine 42, bilan économique |
@@ -59,7 +60,10 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
   gangs.ts         brigandage : recrutement secret, embuscades, racket, saccage, recel (phase 4)
   justice.ts       avis de recherche, primes, arrestations, prison (phase 4)
   nobility.ts      tribut, garnison, impôts, grogne, révoltes, diplomatie, guerre, complots (phase 4)
-  playerPower.ts   embuscades et arrestations du joueur, requêtes au seigneur, patrouilles (phase 4)
+  playerPower.ts   embuscades et arrestations du joueur, requêtes au seigneur, patrouilles ; cour, mariage,
+                   vie au jour le jour (phases 4 et 5)
+  family.ts        anniversaires, cour, mariage, naissances, enfance, succession, tutelle, domesticité,
+                   lignée du joueur (phase 5)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
 tests/             Vitest
 scripts/           demo et simulation headless
@@ -222,6 +226,48 @@ Roche, la plus belliqueuse, est aussi la plus pauvre. Les tests les déclenchent
 
 Format de sauvegarde v4 ; les sauvegardes v1 à v3 sont migrées automatiquement (testé).
 
+## Phase 5 — familles et générations
+
+**Âge.** Chacun a une date de naissance et vieillit à son anniversaire. Le grand âge tue.
+
+**Cour et mariage.** Entre adultes libres qui s'apprécient et se font confiance, l'attirance grandit chaque
+semaine selon leur entente ; à son comble, c'est le mariage : noce payée par le plus aisé à l'auberge,
+foyer commun, ressources en partie mises en commun. Les unions sont libres ; un mariage entre deux maisons
+nobles scelle une alliance (relations +35). Le joueur fait sa cour (charme, conversation, entente) puis
+demande en mariage ; un refus trop tôt indique ce qui manque.
+
+**Naissances et enfance.** Un couple femme-homme en âge d'avoir des enfants, qui mange à sa faim, peut
+concevoir ; grossesse de 70 jours, accouchement risqué. L'enfant hérite du nom, de traits et d'aptitudes
+de ses parents. Il dort, joue, aide ses parents au travail dès dix ans ; ce sont ses parents (ou son
+tuteur) qui le nourrissent, avec le pain du foyer ou acheté pour lui. À 14 ans, il doit gagner son pain.
+Un enfant de maison noble en fait partie ; l'aîné devient héritier si la maison n'en a pas.
+
+**Succession.** À la mort, les créanciers sont payés d'abord sur la succession ; l'argent est partagé
+entre les héritiers (enfants adultes, conjoint, enfants mineurs, puis parents, frères et sœurs), et
+l'héritier principal reçoit les biens, les maisons, les créances et les entreprises. Le conjoint devient
+veuf. Un orphelin mineur est confié à un frère ou une sœur adulte, à un ménage aisé, à un ami de ses
+parents, ou devient pupille de l'intendance. Sans famille, l'intendance hérite comme avant.
+
+**La lignée du joueur.** À ta mort, le monde se fige et tu choisis qui reprend le flambeau : un enfant
+adulte, ton conjoint, un frère, une sœur, ou un ami fidèle. Tu incarnes ce personnage avec ce qu'il a
+hérité ; le royaume n'est pas réinitialisé, et un descendant ouvre une nouvelle génération (onglet
+Famille). Sans aucun proche, la partie se termine. Pour voir passer les années, « Vivre une semaine » ou
+« Vivre une saison » laissent l'IA conduire ton personnage (travail, repas, sommeil, foyer) ; elle s'arrête
+net en cas d'embuscade, d'arrestation ou de décès, et ne commet jamais de crime à ta place.
+
+**Équilibre sur la durée.** Faire vivre le monde des années a révélé de vrais défauts, corrigés :
+- une spirale déflationniste (stocks pleins, plus d'embauche, plus de salaires) : une entreprise dont
+  la caisse déborde garde désormais du personnel ;
+- la richesse figée chez quelques-uns : un habitant aisé prend un chômeur à son service comme domestique ;
+- des migrants qui venaient mourir dans une localité en famine : la nouvelle d'une famine les détourne ;
+  une localité qui se vide attire plutôt un jeune ménage.
+
+Sur 8 ans simulés (3 graines) : 16 à 26 décès, 8 à 9 naissances, une dizaine de couples, population stable
+autour de 50 habitants. Sur 16 ans (graine 42) : 16 naissances, 3 enfants nés pendant la partie devenus
+adultes, population entre 51 et 56 habitants dont une douzaine d'enfants ; masse monétaire exacte.
+
+Format de sauvegarde v5 ; les sauvegardes v1 à v4 sont migrées automatiquement (testé).
+
 ## État réel du développement
 
 ### Implémenté et testé
@@ -241,7 +287,11 @@ Format de sauvegarde v4 ; les sauvegardes v1 à v3 sont migrées automatiquement
 - Déterminisme complet (même graine + mêmes actions = même monde, testé).
 
 ### Partiel
-- Les ambitions se limitent à cinq types ; pas encore de mariage ni de projets familiaux.
+- Les ambitions se limitent à cinq types ; les PNJ ne cherchent pas activement à se marier ou à avoir
+  des enfants (cela découle de leurs relations), ni à transmettre un métier à leurs enfants.
+- Le monde de départ compte plus d'hommes que de femmes jeunes : peu de foyers peuvent avoir des enfants
+  au début ; les jeunes ménages qui s'installent rééquilibrent peu à peu.
+- Le joueur ne choisit pas encore son héritier à l'avance ni ne rédige de testament.
 - Le joueur ne peut pas encore affréter sa propre caravane ni embaucher un charretier : il transporte
   lui-même, dans la limite de sa charge.
 - Les PNJ peuvent fonder une affaire, mais les conditions (épargne, pénurie locale) sont rarement réunies :

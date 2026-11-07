@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  houseLedBy, petition, orgsOf, wantedFor, type PetitionKind,
+  court, kin, proposeMarriage, houseLedBy, petition, orgsOf, wantedFor, type PetitionKind,
   activeLoans, ambitionLabel, askLoan, businessInTrouble, canTalk, employerOf, fullName, getRelation, greeting, lendMoney, loanTerms,
   moodOf, ownedBusinesses, PROFESSION_NAMES, qty, relationLabel, talk, TRAIT_NAMES, type TalkKind,
 } from '../engine';
@@ -76,6 +76,16 @@ export function NpcDialog({ game, npcId, onClose }: { game: Game; npcId: string;
               })}
             </div>
             {houseLedBy(state, n.id) && <LordRequests game={game} lordId={n.id} run={run} />}
+            {n.age >= 16 && p.age >= 16 && !kin(state, p, n) && (
+              <>
+                <h3 className="dialog-sub">Cœur {n.spouseId ? `— ${n.spouseId === p.id ? 'ton conjoint' : `marié${n.sex === 'F' ? 'e' : ''} à ${state.characters[n.spouseId].firstName}`}` : ''}</h3>
+                {n.spouseId !== p.id && <Bar v={Math.round((r.romance ?? 0) * 2 - 100)} label="Attirance" />}
+                <div className="talk-grid">
+                  <button className="btn ghost" disabled={!!state.gameOver || !!p.spouseId || !!n.spouseId} onClick={() => run(s => court(s, npcId))}>Faire la cour<small>30 min · Charisme</small></button>
+                  <button className="btn ghost" disabled={!!state.gameOver || !!p.spouseId || !!n.spouseId} onClick={() => run(s => proposeMarriage(s, npcId))}>Demander en mariage<small>attirance 70, affinité 50</small></button>
+                </div>
+              </>
+            )}
             <h3 className="dialog-sub">Argent</h3>
             <div className="talk-grid">
               {[20, 50, 100].map(amount => {

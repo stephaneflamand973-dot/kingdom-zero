@@ -10,7 +10,7 @@ import { logEvent, pruneEvents } from './events';
 import { maxWorkHours, npcDecide } from './npc';
 import { chance, pick, randInt } from './rng';
 import { gainXp } from './skills';
-import { socialHour } from './social';
+import { modifyRelation, socialHour } from './social';
 import { MIN_PER_DAY, MIN_PER_HOUR, START_OFFSET_MIN, toDate, DAYS_PER_YEAR } from './time';
 import type { Character, GameState, Inventory, ItemId } from './types';
 import { addItem, aliveCharacters, allBusinesses, businessesIn, businessSettlement, clamp, fullName, hasTrait, hereSettlement, homeSettlement, locationsIn, manorOf, newId, npcs, qty, residents, settlementIdOf } from './util';
@@ -21,6 +21,7 @@ import { onDeathOrgs, orgsOf } from './orgs';
 import { feedPrisoners, hourlyJustice } from './justice';
 import { caravanAmbushes, weeklyGangs } from './gangs';
 import { monthlyIntrigues, weeklyGovernance } from './nobility';
+import { birthdays, dailyFamily, dailyServants, feedChildren, settleEstate, successionCandidates, weeklyCourtship } from './family';
 import { npcBorrowing, ownedBusinesses, processLoans } from './finance';
 import { merchantFulfils, postOrder, processOrders, weeklyContractReview } from './contracts';
 import { festivalTonight, initialAmbition, jobHopping, processAmbitions, startFestivals, trySlander } from './society';
@@ -38,7 +39,7 @@ export function advanceTime(state: GameState, minutes: number): number {
   if (minutes < 0) throw new Error('Le temps ne recule pas');
   const end = state.time + minutes;
   let ticks = 0;
-  while (!state.gameOver) {
+  while (!state.gameOver && !state.pendingSuccession) {
     const nextBoundary = (state.processedHours + 1) * MIN_PER_HOUR - START_OFFSET_MIN;
     if (nextBoundary > end) break;
     state.time = nextBoundary;
@@ -46,7 +47,7 @@ export function advanceTime(state: GameState, minutes: number): number {
     hourTick(state);
     ticks++;
   }
-  if (!state.gameOver) state.time = end;
+  if (!state.gameOver && !state.pendingSuccession) state.time = end;
   return ticks;
 }
 
@@ -56,7 +57,8 @@ export function applyHourlyNeeds(state: GameState, c: Character): void {
   const a = c.activity;
   const n = c.needs;
   const sleeping = a.kind === 'sleep' || a.kind === 'jailed';
-  n.hunger = clamp(n.hunger + (sleeping ? HUNGER_PER_HOUR * 0.6 : HUNGER_PER_HOUR), 0, 100);
+  const childFactor = c.age < 14 ? 0.7 : 1; // un enfant mange moins
+  n.hunger = clamp(n.hunger + (sleeping ? HUNGER_PER_HOUR * 0.6 : HUNGER_PER_HOUR) * childFactor, 0, 100);
   if (sleeping) {
     const q = a.quality ?? 1;
     n.energy = clamp(n.energy + 12 * q * (c.sick > 0 ? 0.7 : 1), 0, 100);
@@ -127,7 +129,8 @@ export function hourTick(state: GameState): void {
       if (k) k.hoursThisWeek += 1;
     }
     gainXp(state, c, skill, 1);
-    if (b.ownerId !== c.id) payWage(state, b, c, c.isPlayer ? c.activity.wage ?? b.wage : b.wage);
+    const contractWage = c.isPlayer ? state.contracts.find(k => k.status === 'active' && k.workerId === c.id && k.businessId === b.id)?.wage : undefined;
+    if (b.ownerId !== c.id) payWage(state, b, c, c.isPlayer ? c.activity.wage ?? contractWage ?? b.wage : b.wage);
   }
 
   // 3. Production ; une pénurie d'intrant fait afficher une commande au tableau
@@ -164,8 +167,11 @@ export function hourTick(state: GameState): void {
     }
   }
 
-  // 7. Décisions des PNJ pour l'heure qui commence
+  // 7. Décisions des PNJ pour l'heure qui commence (et du joueur s'il vit au jour le jour)
+  if (d.hour === 7 || d.hour === 18) feedChildren(state);
   for (const c of npcs(state)) npcDecide(state, c, d.hour, d.weekday);
+  const me = state.characters[state.playerId];
+  if (state.autopilotUntil && state.autopilotUntil > state.time && me.alive && !state.encounter) npcDecide(state, me, d.hour, d.weekday, true);
 
   // 8. Vie sociale : regroupement par lieu
   const groups: Record<string, Character[]> = {};
@@ -261,8 +267,10 @@ export function dayTick(state: GameState): void {
     }
   }
 
-  // Anniversaire collectif au nouvel an
-  if (d.day > 0 && d.day % DAYS_PER_YEAR === 0) for (const c of aliveCharacters(state)) c.age += 1;
+  // Anniversaires, grossesses et naissances (phase 5)
+  birthdays(state);
+  dailyFamily(state);
+  dailyServants(state);
 
   // Hebdomadaire (chaque lundi) : impôts, salaires, migrations
   if (d.weekday === 0 && d.day > 0) {
@@ -300,6 +308,7 @@ export function dayTick(state: GameState): void {
     weeklyTerritories(state);
     weeklyGovernance(state);
     weeklyGangs(state);
+    weeklyCourtship(state);
   }
 
   for (const sid of state.settlementOrder) soupKitchen(state, sid);
@@ -351,8 +360,10 @@ export function killCharacter(state: GameState, c: Character, cause: string): vo
     c.employerId = undefined;
   }
   c.activity = { kind: 'dead', locationId: c.locationId, since: state.time, note: `Mort ${cause}` };
+  // Succession (phase 5) : dettes, partage, biens, entreprises, tutelle ; sans famille, l'intendance hérite
+  const inherited = settleEstate(state, c);
   // Biens : sans famille, l'héritage revient à l'intendance du village
-  for (const owned of ownedBusinesses(state, c)) {
+  for (const owned of inherited ? [] : ownedBusinesses(state, c)) {
     const heir = owned.employees.map(id => state.characters[id]).filter(e => e.alive && !e.isPlayer)
       .sort((a, b) => b.skills.gestion - a.skills.gestion || (a.id < b.id ? -1 : 1))[0];
     if (heir) {
@@ -368,13 +379,17 @@ export function killCharacter(state: GameState, c: Character, cause: string): vo
       text: heir ? `${fullName(heir)} reprend ${owned.name} après la mort de ${fullName(c)}.` : `${owned.name} passe sous la tutelle de l'intendance.`,
       witnesses: aliveCharacters(state).map(x => x.id) });
   }
-  if (c.money > 0) transferMoney(state, P.c(c.id), P.b(manor.id), c.money);
-  for (const [k, v] of Object.entries(c.inventory)) {
+  if (!inherited && c.money > 0) transferMoney(state, P.c(c.id), P.b(manor.id), c.money);
+  for (const [k, v] of inherited ? [] : Object.entries(c.inventory)) {
     addItem(manor.stock, k as ItemId, v!);
     delete c.inventory[k as ItemId];
   }
   onDeathOrgs(state, c);
-  if (c.isPlayer) state.gameOver = death.text;
+  if (c.isPlayer) {
+    const candidates = successionCandidates(state, c);
+    if (candidates.length) state.pendingSuccession = { deceasedId: c.id, candidates, cause: death.text };
+    else state.gameOver = death.text;
+  }
 }
 
 /** L'intendance redistribue une part de ses réserves aux plus démunis (filet de sécurité). */
@@ -424,16 +439,39 @@ function migration(state: GameState, settlementId: string): void {
   const st = state.settlements[settlementId];
   const pop = residents(state, settlementId).length;
   if (pop >= st.popCap) return;
-  // on ne vient s'installer que là où l'on entend dire qu'il y a du travail
+  // la nouvelle d'une famine décourage les candidats à l'installation
+  const recentFamine = state.events.filter(e => e.type === 'death' && e.text.includes('de faim') && e.time > state.time - 56 * MIN_PER_DAY
+    && e.actorId && settlementIdOf(state, state.characters[e.actorId].homeId) === settlementId).length;
+  if (recentFamine >= 2) return;
+  // Une localité qui se vide attire un jeune ménage (terres et maisons libres)
+  if (pop < st.popCap * 0.8 && chance(state, 0.5)) {
+    const a = migrant(state, settlementId, 'M', [18, 30]);
+    const b = migrant(state, settlementId, 'F', [17, 28]);
+    b.lastName = a.lastName;
+    a.spouseId = b.id; b.spouseId = a.id;
+    modifyRelation(state, a.id, b.id, 50, 50); modifyRelation(state, b.id, a.id, 50, 50);
+    logEvent(state, { type: 'arrival', actorId: a.id, targetId: b.id, importance: 2, locationId: st.squareId,
+      text: `Un jeune ménage, ${fullName(a)} et ${fullName(b)}, s'installe à ${st.name} sur une terre délaissée.`, witnesses: residents(state, settlementId).map(x => x.id) });
+    return;
+  }
+  // sinon, on ne vient s'installer que là où l'on entend dire qu'il y a du travail
   if (!businessesIn(state, settlementId).some(b => isHiring(state, b))) return;
   if (residents(state, settlementId).some(c => !c.employerId && c.age < 60)) return; // des chômeurs attendent déjà
-  const sex = chance(state, 0.5) ? 'M' : 'F';
+  const c = migrant(state, settlementId, chance(state, 0.5) ? 'M' : 'F', [17, 40]);
+  logEvent(state, { type: 'arrival', actorId: c.id, importance: 2, locationId: c.locationId,
+    text: `${fullName(c)}, venu d'au-delà des collines, s'installe à ${st.name} pour chercher du travail.`,
+    witnesses: residents(state, settlementId).map(x => x.id) });
+}
+
+/** Crée un migrant (argent et pain apportés de l'extérieur : comptabilisés). */
+function migrant(state: GameState, settlementId: string, sex: 'M' | 'F', ages: [number, number]): Character {
+  const st = state.settlements[settlementId];
   const id = newId(state, 'c');
   const money = 25;
   const house = locationsIn(state, settlementId, 'houses')[0]?.id ?? st.squareId;
   const c: Character = {
     id, firstName: pick(state, sex === 'M' ? FIRST_NAMES_M : FIRST_NAMES_F), lastName: pick(state, LAST_NAMES),
-    age: randInt(state, 17, 40), sex, isPlayer: false, alive: true, profession: 'sans_emploi', homeId: house,
+    age: randInt(state, ages[0], ages[1]), sex, isPlayer: false, alive: true, profession: 'sans_emploi', homeId: house,
     locationId: st.squareId, money, inventory: { bread: 2 }, health: 90, sick: 0,
     needs: { hunger: 30, energy: 70, social: 40 },
     attributes: { force: randInt(state, 3, 7), endurance: randInt(state, 3, 7), agilite: randInt(state, 3, 7), intelligence: randInt(state, 3, 7), charisme: randInt(state, 3, 7), perception: randInt(state, 3, 7), volonte: randInt(state, 3, 7) },
@@ -443,15 +481,15 @@ function migration(state: GameState, settlementId: string): void {
     activity: { kind: 'idle', locationId: st.squareId, since: state.time, note: 'Vient d’arriver' },
     unpaidWages: 0, hoursWorkedToday: 0, lastMealTime: state.time, forageProgress: 0,
     ambition: { kind: 'vie_paisible', since: state.time },
+    birthDay: 0, parentIds: [], childIds: [],
   };
+  c.birthDay = toDate(state.time).day - c.age * DAYS_PER_YEAR - randInt(state, 0, DAYS_PER_YEAR - 1);
   c.ambition = initialAmbition(state, c);
   state.characters[id] = c;
   state.characterOrder.push(id);
   state.ledger.externalMoneyIn += money;
   addItem(state.ledger.externalItemsIn, 'bread', 2);
-  logEvent(state, { type: 'arrival', actorId: id, importance: 2, locationId: c.locationId,
-    text: `${fullName(c)}, venu d'au-delà des collines, s'installe à ${st.name} pour chercher du travail.`,
-    witnesses: residents(state, settlementId).map(x => x.id) });
+  return c;
 }
 
 export { maxWorkHours };

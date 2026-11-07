@@ -56,8 +56,8 @@ export function workLocation(state: GameState, c: Character, b: Business, hour: 
 
 interface Option { score: number; run: () => void }
 
-export function npcDecide(state: GameState, c: Character, hour: number, weekday: number): void {
-  if (!c.alive || c.isPlayer) return;
+export function npcDecide(state: GameState, c: Character, hour: number, weekday: number, allowPlayer = false): void {
+  if (!c.alive || (c.isPlayer && !allowPlayer)) return;
   if ((c.jailedUntil ?? 0) > state.time) return; // en prison : rien à décider
   // En voyage (caravane) : le trajet occupe la personne jusqu'à l'arrivée
   if (c.activity.kind === 'travel' && (c.activity.until ?? 0) > state.time) {
@@ -66,6 +66,17 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
   }
   const home = homeSettlement(state, c);
   const n = c.needs;
+
+  // ── Enfance (phase 5) : dormir, jouer, aider ses parents ; ce sont eux qui nourrissent l'enfant
+  if (c.age < 14) {
+    if (n.hunger >= 40) eat(state, c);
+    const night0 = hour >= 20 || hour < 7;
+    if (night0 || n.energy < 25) { setActivity(state, c, 'sleep', c.homeId, c.age < 2 ? 'Nourrisson' : 'Dort'); return; }
+    const parent = c.parentIds.map(id => state.characters[id]).find(p => p?.alive && p.employerId && p.activity.kind === 'work');
+    if (c.age >= 10 && parent) setActivity(state, c, 'idle', parent.locationId, `Aide ${parent.firstName} au travail`);
+    else setActivity(state, c, 'idle', c.homeId, c.age < 3 ? 'Dans les bras de sa famille' : 'Joue près de la maison');
+    return;
+  }
   const job = employerOf(state, c);
   const sunday = weekday === 6;
   const night = hour >= 22 || hour < 6;
@@ -134,6 +145,12 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
   if (!night && qty(c.inventory, 'wood') >= 4) {
     const buyer = bestBuyer(state, c, 'wood', hour);
     if (buyer) opts.push({ score: 58, run: () => sellGoods(state, c, buyer.b, 'wood', buyer.price, qty(c.inventory, 'wood') - 1) });
+  }
+
+  // Domestique : sert chez son maître pendant la journée
+  if (c.masterId && !night && hour >= 8 && hour < 17 && !sunday && n.energy > 15) {
+    const m = state.characters[c.masterId];
+    if (m?.alive) opts.push({ score: 66, run: () => setActivity(state, c, 'idle', m.homeId, `Sert chez ${fullName(m)}`) });
   }
 
   // Chercher du travail (plutôt le matin)
@@ -259,7 +276,7 @@ function seekHelp(state: GameState, c: Character, hour: number): void {
   }
   // 2. Le désespoir pousse les malhonnêtes (ou les affamés) au vol
   const desperate = c.needs.hunger >= 90 || hasTrait(c, 'malhonnete');
-  if (desperate && !hasTrait(c, 'honnete') && chance(state, hasTrait(c, 'malhonnete') ? 0.6 : 0.25)) {
+  if (desperate && !c.isPlayer && !hasTrait(c, 'honnete') && chance(state, hasTrait(c, 'malhonnete') ? 0.6 : 0.25)) {
     const target = businessesIn(state, homeSettlement(state, c).id).find(b => b.sells.includes('bread') && qty(b.stock, 'bread') > 0);
     if (target) {
       c.locationId = target.locationId;

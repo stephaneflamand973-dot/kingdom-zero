@@ -35,6 +35,7 @@ export function finish(state: GameState, p: Character, minutes: number): void {
 
 export function guard(state: GameState): ActionResult | null {
   if (state.gameOver) return no('La partie est terminée.');
+  if (state.pendingSuccession) return no('Choisis d’abord qui reprend le flambeau.');
   if (state.encounter) return no('Tu dois d’abord régler la rencontre en cours.');
   const p = player(state);
   if ((p.jailedUntil ?? 0) > state.time) return no('Tu es en prison.');

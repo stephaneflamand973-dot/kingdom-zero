@@ -8,9 +8,9 @@ import {
 import { ACTIVITY_COLOR } from './VillageMap';
 import type { Game } from './useGame';
 
-type Tab = 'perso' | 'inv' | 'affaires' | 'rel' | 'journal' | 'monde' | 'pouvoir';
+type Tab = 'perso' | 'famille' | 'inv' | 'affaires' | 'rel' | 'journal' | 'monde' | 'pouvoir';
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'perso', label: 'Personnage' }, { id: 'inv', label: 'Besace' }, { id: 'affaires', label: 'Affaires' }, { id: 'rel', label: 'Relations' },
+  { id: 'perso', label: 'Personnage' }, { id: 'famille', label: 'Famille' }, { id: 'inv', label: 'Besace' }, { id: 'affaires', label: 'Affaires' }, { id: 'rel', label: 'Relations' },
   { id: 'journal', label: 'Journal' }, { id: 'monde', label: 'Monde' }, { id: 'pouvoir', label: 'Pouvoir' },
 ];
 
@@ -24,6 +24,7 @@ export function SidePanels({ game, onTalk }: { game: Game; onTalk: (id: string) 
       </nav>
       <div className="tab-body">
         {tab === 'perso' && <Perso state={state} />}
+        {tab === 'famille' && <Famille state={state} onTalk={onTalk} />}
         {tab === 'inv' && <Inv state={state} />}
         {tab === 'affaires' && <Affaires game={game} />}
         {tab === 'rel' && <Rel state={state} onTalk={onTalk} />}
@@ -263,7 +264,7 @@ function Monde({ state }: { state: GameState }) {
           {pop.map(c => (
             <li key={c.id}>
               <i style={{ background: ACTIVITY_COLOR[c.activity.kind] }} />
-              <div><b>{fullName(c)}</b> <span className="muted small">{PROFESSION_NAMES[c.profession]}, {c.age} ans · {moodOf(c)}</span>
+              <div><b>{fullName(c)}</b>{c.spouseId ? ' ⚭' : ''} <span className="muted small">{c.age < 14 ? 'Enfant' : PROFESSION_NAMES[c.profession]}, {c.age} ans · {moodOf(c)}</span>
                 <div className="small">{c.activity.kind === 'ambush' ? 'Absent' : c.activity.note} — <span className="muted">{c.activity.kind === 'ambush' ? '?' : state.locations[c.locationId].name}</span></div>
                 <div className="small muted">Ambition : {ambitionLabel(state, c)}</div></div>
             </li>
@@ -358,6 +359,64 @@ function Pouvoir({ state }: { state: GameState }) {
         const suspects = [...new Set(known.filter(e => e.data?.gang === g.id || e.type === 'recruit').map(e => e.actorId).filter((x): x is string => !!x && g.members.includes(x)))];
         return <p key={g.id} className="small"><b>{g.dissolved ? `${g.name} (dispersée)` : 'Une bande sévit sur les routes'}</b>{suspects.length ? ` · membres connus : ${suspects.map(x => fullName(state.characters[x])).join(', ')}` : ' · membres inconnus'}</p>;
       })}
+    </div>
+  );
+}
+
+function Famille({ state, onTalk }: { state: GameState; onTalk: (id: string) => void }) {
+  const p = state.characters[state.playerId];
+  const person = (id: string, role: string) => {
+    const c = state.characters[id];
+    if (!c) return null;
+    const here = c.alive && c.locationId === p.locationId;
+    return (
+      <li key={id + role} className={c.alive ? '' : 'dead'}>
+        <div className="rel-row-head">
+          <button className="link" disabled={!here} onClick={() => here && onTalk(id)}>{fullName(c)}</button>
+          <span className="muted small">{role}</span>
+        </div>
+        <div className="mini-bars">
+          {c.alive ? <>
+            <span>{c.age} ans</span>
+            <span>{c.age < 14 ? 'Enfant' : PROFESSION_NAMES[c.profession]}</span>
+            <span className={c.needs.hunger > 60 ? 'ko' : ''}>faim {Math.round(c.needs.hunger)}</span>
+            <span className="muted">{state.locations[c.locationId].name}</span>
+          </> : <span>† {c.activity.note}</span>}
+        </div>
+      </li>
+    );
+  };
+  const suitors = Object.entries(state.characters)
+    .filter(([id, c]) => id !== p.id && c.alive && (c.relations[p.id]?.romance ?? 0) > 0)
+    .sort((a, b) => (b[1].relations[p.id]!.romance ?? 0) - (a[1].relations[p.id]!.romance ?? 0)).slice(0, 5);
+  const siblingIds = [...new Set(p.parentIds.flatMap(pid => state.characters[pid]?.childIds ?? []))].filter(id => id !== p.id);
+  return (
+    <div className="famille">
+      <p className="goal">Lignée {state.dynasty.name} · génération {state.dynasty.generation}{p.pregnantUntil ? ' · un enfant est attendu' : ''}</p>
+      <h4>Foyer</h4>
+      <ul className="rel-list">
+        {p.spouseId ? person(p.spouseId, p.sex === 'F' || state.characters[p.spouseId].sex === 'M' ? 'Conjoint' : 'Conjointe') : <li className="muted small">Tu n’es pas marié. Fais ta cour à quelqu’un qui t’apprécie (onglet de dialogue).</li>}
+        {p.childIds.map(id => person(id, state.characters[id]?.sex === 'F' ? 'Fille' : 'Fils'))}
+      </ul>
+      {p.childIds.some(id => state.characters[id]?.alive && state.characters[id].age < 14) && <p className="muted small">Tes enfants mangent ce que ton foyer leur donne : garde du pain, ou de quoi en acheter.</p>}
+      {(p.parentIds.length > 0 || siblingIds.length > 0) && <h4>Parents</h4>}
+      <ul className="rel-list">
+        {p.parentIds.map(id => person(id, state.characters[id]?.sex === 'F' ? 'Mère' : 'Père'))}
+        {siblingIds.map(id => person(id, state.characters[id]?.sex === 'F' ? 'Sœur' : 'Frère'))}
+      </ul>
+      {!p.spouseId && suitors.length > 0 && (<>
+        <h4>Attirances</h4>
+        <ul className="rel-list">
+          {suitors.map(([id, c]) => <li key={id}><div className="rel-row-head"><b>{fullName(c)}</b><span>{c.relations[p.id]!.romance}/100</span></div></li>)}
+        </ul>
+      </>)}
+      <h4>Lignée</h4>
+      <ol className="journal">
+        {state.dynasty.heads.map(h => {
+          const c = state.characters[h.id];
+          return <li key={h.id}><span className="j-time">{formatDate(h.from).split(' ').slice(1).join(' ')}{h.to !== undefined ? ` → ${formatDate(h.to).split(' ').slice(1).join(' ')}` : ' → aujourd’hui'}</span><span>{fullName(c)}{c.alive ? '' : ` († ${c.age} ans)`}</span></li>;
+        })}
+      </ol>
     </div>
   );
 }

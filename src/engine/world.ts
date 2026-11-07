@@ -5,8 +5,9 @@ import { randInt } from './rng';
 import { absoluteHour, recordPrices } from './sim';
 import { modifyRelation } from './social';
 import { initialAmbition } from './society';
+import { birthDayFor, seedFamilies } from './family';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 const LOCATIONS: Omit<Location, 'settlementId'>[] = [
   { id: 'square', name: 'Place du Puits', kind: 'square', x: 500, y: 330, description: 'Le cœur de Valcendre : un vieux puits, des bancs de pierre, les nouvelles qui circulent.' },
@@ -75,6 +76,7 @@ export function emptyState(seed: number): GameState {
     events: [], eventSeq: 0, idSeq: 100, playerId: 'player',
     settlements: {}, settlementOrder: [], roads: [], caravans: [], properties: [], priceBook: {}, festivals: [], tradeMemory: {},
     orgs: {}, orgOrder: [], wars: [], wanted: [],
+    dynasty: { name: 'de Nulle-Part', generation: 1, heads: [{ id: 'player', from: 0 }] },
     ledger: { produced: {}, consumed: {}, externalMoneyIn: 0, externalMoneyOut: 0, externalItemsIn: {}, removedItems: {} },
     history: [], stats: { ticks: 0, trades: 0, npcActions: 0 },
     loans: [], contracts: [], orders: [],
@@ -99,6 +101,7 @@ export function createWorld(seed: number): GameState {
     activity: { kind: 'idle', locationId: 'square', since: 0, note: 'Arrive au village' },
     unpaidWages: 0, hoursWorkedToday: 0, lastMealTime: 0, forageProgress: 0,
     ambition: { kind: 'vie_paisible', since: 0 },
+    birthDay: birthDayFor('player', 24), parentIds: [], childIds: [],
   };
   state.characters.player = player;
   state.characterOrder.push('player');
@@ -127,6 +130,7 @@ export function createWorld(seed: number): GameState {
 
   addRegion(state);
   addPower(state);
+  seedFamilies(state);
   finalizeRelations(state);
   recordPrices(state, 'valcendre'); // le joueur connaît les prix de son village de départ
   for (const id of state.characterOrder) {
@@ -160,6 +164,7 @@ export function addNpc(state: GameState, s: NpcSpec): Character {
     activity: { kind: 'sleep', locationId: s.home, since: 0, note: 'Dort chez soi' },
     unpaidWages: 0, hoursWorkedToday: 0, lastMealTime: 0, forageProgress: 0,
     ambition: { kind: 'vie_paisible', since: 0 },
+    birthDay: birthDayFor(s.id, s.age), parentIds: [], childIds: [],
   };
   state.characters[c.id] = c;
   state.characterOrder.push(c.id);

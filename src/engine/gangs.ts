@@ -120,7 +120,7 @@ export function weeklyGangs(state: GameState): void {
 function recruit(state: GameState, g: Organization): void {
   const members = new Set(g.members);
   const candidates = residents(state, g.seatId).concat(...state.settlementOrder.filter(s => s !== g.seatId).map(s => residents(state, s)))
-    .filter(c => !members.has(c.id) && !c.employerId && !hasTrait(c, 'honnete') && !isJailed(state, c) && c.age < 50)
+    .filter(c => !members.has(c.id) && !c.employerId && !hasTrait(c, 'honnete') && !isJailed(state, c) && c.age >= 16 && c.age < 50)
     .filter(c => hasTrait(c, 'malhonnete') || (c.money < 5 && c.needs.hunger > 60))
     .filter(c => [...members].some(m => getRelation(state, c.id, m).affinity >= 0))
     .filter(c => !orgList(state, 'house').some(h => h.members.includes(c.id)));

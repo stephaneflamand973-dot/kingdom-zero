@@ -326,7 +326,8 @@ export function isHiring(state: GameState, b: Business): boolean {
   if (b.kind === 'manor') return b.treasury > 380 + b.employees.length * 70;
   const outputs = b.sells.filter(i => RECIPES[b.kind]?.outputs[i]);
   const underproducing = outputs.some(i => qty(b.stock, i) < (b.targets[i] ?? 0));
-  return underproducing && b.treasury > reserveFor(b) * 1.2;
+  // une caisse qui déborde fait travailler du monde, même sans pénurie (phase 5 : éviter la spirale déflationniste)
+  return (underproducing && b.treasury > reserveFor(b) * 1.2) || b.treasury > reserveFor(b) * 3;
 }
 
 export function hireBest(state: GameState, b: Business, candidates?: Character[], role?: 'garde'): Character | undefined {

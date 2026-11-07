@@ -2,6 +2,7 @@
 import { checkIntegrity } from './invariants';
 import type { Festival, GameState } from './types';
 import { addPower, addRegion, SAVE_VERSION, valcendreSettlement } from './world';
+import { birthDayFor, seedFamilies } from './family';
 import { initialAmbition } from './society';
 
 export interface SaveFile { format: 'KINGDOM_ZERO_SAVE'; version: number; savedAt: string; checksum: string; state: GameState }
@@ -55,6 +56,17 @@ const MIGRATIONS: Record<number, (s: GameState) => GameState> = {
       st.unrest ??= 20; st.unrestWeeks ??= 0;
     }
     addPower(s, true);
+    return s;
+  },
+  // v4 → v5 (phase 5) : familles, dates de naissance, lignée du joueur
+  4: s => {
+    for (const id of s.characterOrder) {
+      const c = s.characters[id];
+      c.parentIds ??= []; c.childIds ??= [];
+      c.birthDay ??= birthDayFor(id, c.age) + Math.floor((s.time + 360) / 1440);
+    }
+    seedFamilies(s);
+    s.dynasty ??= { name: s.characters[s.playerId].lastName, generation: 1, heads: [{ id: s.playerId, from: 0 }] };
     return s;
   },
 };

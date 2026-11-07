@@ -1,4 +1,4 @@
-import { orgsOf, patrol, festivalAt, festivalTonight, feastDrink, drinkAle, eat, forage, formatClock, minutesUntilHour, qty, sleep, sleepOptions, toDate, train, wait } from '../engine';
+import { liveDays, orgsOf, patrol, festivalAt, festivalTonight, feastDrink, drinkAle, eat, forage, formatClock, minutesUntilHour, qty, sleep, sleepOptions, toDate, train, wait } from '../engine';
 import type { Game } from './useGame';
 
 export function ActionPanel({ game }: { game: Game }) {
@@ -30,6 +30,8 @@ export function ActionPanel({ game }: { game: Game }) {
           {loc.kind === 'woodlot' && <button className="btn" disabled={over} onClick={() => act(s => forage(s, 3))} title="3 h · Agriculture">🪵 Ramasser du bois (3 h)</button>}
           {loc.kind === 'square' && <button className="btn" disabled={over} onClick={() => act(train)} title="1 h · Combat">⚔ S'entraîner</button>}
           <button className="btn ghost" disabled={over} onClick={() => act(s => wait(s, 60))}>⌛ Attendre 1 h</button>
+          <button className="btn ghost" disabled={over} onClick={() => act(s => liveDays(s, 7))} title="L’IA conduit ton personnage : il travaille, mange, dort. S’arrête en cas d’imprévu.">📅 Vivre une semaine</button>
+          <button className="btn ghost" disabled={over} onClick={() => act(s => liveDays(s, 28))} title="Une saison entière au fil des jours">🍂 Vivre une saison</button>
 <button className="btn ghost" disabled={over} onClick={() => act(s => wait(s, minutesUntilHour(s.time, nextStop.hour)))}>⌛ Jusqu'{nextStop.label}</button>
         </div>
         <h3 className="sub">Repos</h3>

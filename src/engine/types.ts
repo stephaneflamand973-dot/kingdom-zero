@@ -37,6 +37,7 @@ export interface Relation {
   affinity: number; // -100..100 : amitié / hostilité
   trust: number;    // -100..100 : confiance
   lastInteraction: number; // minute de jeu
+  romance?: number;        // attirance 0..100 (phase 5)
 }
 
 export interface Needs {
@@ -108,6 +109,15 @@ export interface Character {
   jobSince?: number;      // jour d'embauche dans l'emploi actuel
   title?: 'ecuyer' | 'conseiller'; // titre accordé par un seigneur (phase 4)
   jailedUntil?: number;   // minute de libération
+  // Famille (phase 5)
+  birthDay: number;       // jour absolu de naissance (négatif pour les personnages nés avant la partie)
+  spouseId?: string;
+  parentIds: string[];
+  childIds: string[];
+  guardianId?: string;    // tuteur d'un orphelin mineur
+  pregnantUntil?: number; // jour de l'accouchement
+  pregnancyFather?: string;
+  masterId?: string;      // domestique au service de ce maître (phase 5)
 }
 
 export type BusinessKind = 'farm' | 'woodlot' | 'mine' | 'bakery' | 'tavern' | 'forge' | 'market' | 'manor';
@@ -156,7 +166,8 @@ export type EventType =
   | 'work_praise' | 'order_posted' | 'order_done' | 'order_failed' | 'slander' | 'festival' | 'rivalry'
   | 'caravan' | 'founding' | 'move' | 'rent' | 'eviction' | 'property'
   | 'ambush' | 'racket' | 'vandalism' | 'recruit' | 'arrest' | 'jail' | 'bounty' | 'tribute' | 'tax_change'
-  | 'revolt' | 'war' | 'battle' | 'conquest' | 'peace' | 'plot' | 'assassination' | 'succession' | 'title' | 'combat' | 'diplomacy';
+  | 'revolt' | 'war' | 'battle' | 'conquest' | 'peace' | 'plot' | 'assassination' | 'succession' | 'title' | 'combat' | 'diplomacy'
+  | 'courtship' | 'wedding' | 'pregnancy' | 'birth' | 'coming_of_age' | 'estate' | 'adoption' | 'widowhood';
 
 export interface WorldEvent {
   id: string;
@@ -391,6 +402,14 @@ export interface GameState {
   wars: War[];
   wanted: Wanted[];
   encounter?: Encounter;
+  /** Lignée du joueur (phase 5) : chaque personnage incarné à tour de rôle. */
+  dynasty: { name: string; generation: number; heads: { id: string; from: number; to?: number }[] };
+  /** Le personnage joueur vient de mourir : choix du successeur en attente. */
+  pendingSuccession?: { deceasedId: string; candidates: string[]; cause: string };
+  /** Pilote automatique : l'IA conduit le joueur jusqu'à cette minute. */
+  autopilotUntil?: number;
+  /** Dernier jour où les anniversaires ont été fêtés (évite un double vieillissement). */
+  birthdaysDoneDay?: number;
   gameOver?: string;
   /** Mode observateur (tests/simulations) : le joueur n'a ni besoins ni présence. */
   observer?: boolean;

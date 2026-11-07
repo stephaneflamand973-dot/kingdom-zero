@@ -4,6 +4,7 @@ import { ActionPanel } from './ActionPanel';
 import { LocationPanel } from './LocationPanel';
 import { NpcDialog } from './NpcDialog';
 import { EncounterModal } from './EncounterModal';
+import { SuccessionModal } from './SuccessionModal';
 import { SaveMenu } from './SaveMenu';
 import { SidePanels } from './SidePanels';
 import { TopBar } from './TopBar';
@@ -28,7 +29,8 @@ export function App() {
           <SidePanels game={game} onTalk={setTalkTo} />
         </div>
       </main>
-      {state.encounter && !state.gameOver && <EncounterModal game={game} />}
+      {state.encounter && !state.gameOver && !state.pendingSuccession && <EncounterModal game={game} />}
+      {state.pendingSuccession && !menu && <SuccessionModal game={game} onMenu={() => setMenu(true)} />}
       {talkTo && !state.encounter && <NpcDialog game={game} npcId={talkTo} onClose={() => setTalkTo(null)} />}
       {menu && <SaveMenu game={game} onClose={() => setMenu(false)} />}
       {state.gameOver && (
@@ -36,7 +38,7 @@ export function App() {
           <div className="modal gameover">
             <h2>Fin de vie</h2>
             <p>{state.gameOver}</p>
-            <p className="muted">Le royaume continue sans toi. La succession par un descendant sera possible dans une version future.</p>
+            <p className="muted">Personne de ta famille ni de tes proches ne peut reprendre le flambeau. Le royaume continue sans toi.</p>
             <button className="btn" onClick={() => setMenu(true)}>Charger une sauvegarde / nouvelle partie</button>
           </div>
         </div>

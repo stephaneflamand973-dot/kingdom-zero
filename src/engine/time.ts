@@ -56,6 +56,7 @@ export function formatClock(time: number): string {
 
 export function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;
+  if (minutes >= 48 * 60) { const d = Math.round(minutes / MIN_PER_DAY); return `${d} jours`; }
   const h = Math.floor(minutes / 60), m = minutes % 60;
   return m ? `${h} h ${m}` : `${h} h`;
 }
