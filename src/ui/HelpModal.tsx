@@ -6,7 +6,7 @@ import type { PrefsApi } from './prefs';
 export const SHORTCUTS: [string, string][] = [
   ['M', 'Manger'], ['B', 'Boire une bière'], ['A', 'Attendre 1 h'], ['J', 'Attendre jusqu’à la prochaine étape (midi, 18h, matin)'],
   ['D', 'Dormir (meilleure option disponible)'], ['V', 'Vivre une semaine (pilote automatique)'],
-  ['1 – 8', 'Onglets : Personnage, Famille, Besace, Affaires, Relations, Journal, Monde, Pouvoir'],
+  ['1 – 9', 'Onglets : Personnage, Famille, Besace, Affaires, Relations, Journal, Monde, Pouvoir, Requêtes'],
   ['S', 'Couper / rétablir le son'], ['P', 'Menu de la partie (sauvegardes)'], ['? ou H', 'Cette aide'], ['Échap', 'Fermer la fenêtre ouverte'],
   ['Tab / Entrée', 'Parcourir la carte et les boutons au clavier'],
 ];
@@ -22,6 +22,7 @@ export function goals(state: GameState): Goal[] {
     { label: 'Gagner ses premiers deniers', done: p.money >= 20 || !!p.employerId, hint: 'Va à la ferme ou au bois : un patron qui manque de bras paie à l’heure (onglet du lieu, « Travailler »).' },
     { label: 'Avoir deux repas d’avance', done: food >= 2, hint: 'Achète du pain à la boulangerie ou du grain à la ferme, et garde-en dans ta besace.' },
     { label: 'Trouver un emploi stable', done: !!p.employerId, hint: 'Demande un contrat à un patron qui embauche : salaire chaque semaine et meilleure réputation.' },
+    { label: 'Tenir une promesse', done: (state.quests ?? []).some(q => q.status === 'reussie'), hint: 'Onglet Requêtes (touche 9) : des habitants ont besoin de toi. Accepte une requête dans leur dialogue, puis tiens parole.' },
     { label: 'Se faire un ami', done: friend, hint: 'Bavarde, complimente, offre du pain. Les amis te prêtent, te nourrissent et colportent du bien de toi.' },
     { label: 'Dormir sous son propre toit', done: roof, hint: 'Loue une chambre (Maisons du village) : on y dort mieux et le coffre protège tes biens.' },
     { label: 'Visiter une autre localité', done: Object.keys(state.priceBook).length > 1, hint: 'Les prix diffèrent d’un village à l’autre : c’est là que naît le commerce.' },

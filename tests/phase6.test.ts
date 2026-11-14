@@ -196,7 +196,7 @@ describe('Sauvegarde v6 → v7', () => {
     const r = deserialize(JSON.stringify({ format: 'KINGDOM_ZERO_SAVE', version: 5, savedAt: 'x', checksum: checksum(body), state: v5 }));
     expect(r.error).toBeUndefined();
     expect(r.state!.version).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(7);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(7);
     expect(Array.isArray(r.state!.incidents)).toBe(true);
     expect(Array.isArray(r.state!.convoys)).toBe(true);
   });

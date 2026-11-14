@@ -4,6 +4,7 @@
 // franchie (résolution horaire), puis à chaque frontière de jour.
 // `processedHours` garantit qu'une heure n'est jamais simulée deux fois.
 // ─────────────────────────────────────────────────────────────
+import { cleanupQuests, dailyChronicle, dailyQuests } from './quests';
 import { npcApproaches } from './approaches';
 import { weeklyPatronage } from './family';
 import { dailyIncidents, epidemicFactor, grainConvoy, hasIncident, hospice, processConvoys, weeklyPublicWorks, weeklyStewardship } from './incidents';
@@ -357,6 +358,11 @@ export function dayTick(state: GameState): void {
   processAmbitions(state);
   if (d.weekday === 0 && d.day > 0) weeklyContractReview(state);
   state.festivals = state.festivals.filter(f => f.day >= d.day);
+
+  // Phase 7 : requêtes des habitants et chronique de la lignée
+  cleanupQuests(state);
+  dailyQuests(state);
+  dailyChronicle(state);
 
   snapshot(state);
   pruneEvents(state);

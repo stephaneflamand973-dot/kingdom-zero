@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  acceptQuest, completeQuest, declineQuest, offerFrom, questActionsWith,
   court, kin, proposeMarriage, houseLedBy, petition, orgsOf, wantedFor, type PetitionKind,
   activeLoans, ambitionLabel, askLoan, businessInTrouble, canTalk, employerOf, fullName, getRelation, greeting, lendMoney, loanTerms,
   moodOf, ownedBusinesses, PROFESSION_NAMES, qty, relationLabel, talk, TRAIT_NAMES, type TalkKind,
@@ -77,11 +78,12 @@ export function NpcDialog({ game, npcId, onClose }: { game: Game; npcId: string;
                 );
               })}
             </div>
+            <QuestBox game={game} npcId={npcId} run={run} />
             {houseLedBy(state, n.id) && <LordRequests game={game} lordId={n.id} run={run} />}
             {n.age >= 16 && p.age >= 16 && !kin(state, p, n) && (
               <>
                 <h3 className="dialog-sub">Cœur {n.spouseId ? `— ${n.spouseId === p.id ? 'ton conjoint' : `marié${n.sex === 'F' ? 'e' : ''} à ${state.characters[n.spouseId].firstName}`}` : ''}</h3>
-                {n.spouseId !== p.id && <Bar v={Math.round((r.romance ?? 0) * 2 - 100)} label="Attirance" />}
+                {n.spouseId !== p.id && <Bar v={Math.round(r.romance ?? 0)} label="Attirance" />}
                 <div className="talk-grid">
                   <button className="btn ghost" disabled={!!state.gameOver || !!p.spouseId || !!n.spouseId} onClick={() => run(s => court(s, npcId))}>Faire la cour<small>30 min · Charisme</small></button>
                   <button className="btn ghost" disabled={!!state.gameOver || !!p.spouseId || !!n.spouseId} onClick={() => run(s => proposeMarriage(s, npcId))}>Demander en mariage<small>attirance 70, affinité 50</small></button>
@@ -135,5 +137,33 @@ function LordRequests({ game, lordId, run }: { game: Game; lordId: string; run: 
         ))}
       </div>
     </>
+  );
+}
+
+function QuestBox({ game, npcId, run }: { game: Game; npcId: string; run: (fn: Parameters<Game['act']>[0]) => void }) {
+  const { state } = game;
+  const offer = offerFrom(state, npcId);
+  const actions = questActionsWith(state, npcId);
+  if (!offer && !actions.length) return null;
+  return (
+    <div className="quest-box">
+      {offer && (<>
+        <h3 className="dialog-sub">Une requête</h3>
+        <p className="small">{offer.text}</p>
+        <div className="talk-grid">
+          <button className="btn" disabled={!!state.gameOver} onClick={() => run(s => acceptQuest(s, offer.id))}>Accepter<small>tu donnes ta parole</small></button>
+          <button className="btn ghost" onClick={() => run(s => declineQuest(s, offer.id))}>Décliner<small>sans conséquence</small></button>
+        </div>
+      </>)}
+      {actions.length > 0 && (<>
+        <h3 className="dialog-sub">Tes engagements</h3>
+        <div className="talk-grid">
+          {actions.map(a => (
+            <button key={a.quest.id} className={`btn ${a.quest.kind === 'humiliation' ? 'danger' : ''}`} disabled={!a.ready || !!state.gameOver} title={a.why ?? ''}
+              onClick={() => run(s => completeQuest(s, a.quest.id))}>{a.label}<small>{a.why ?? 'tenir parole'}</small></button>
+          ))}
+        </div>
+      </>)}
+    </div>
   );
 }

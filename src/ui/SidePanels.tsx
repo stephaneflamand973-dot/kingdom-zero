@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  acceptedQuests, openOffers, quests, QUEST_NAMES, socialRank,
   activeIncidents, INCIDENT_EFFECTS, INCIDENT_NAMES, toDate, residents, businessesIn, settlementIdOf, aliveCharacters, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
   activeContract, activeLoans, ambitionLabel, quitJob, repayLoan, reputationTags, orgList, landsOf, soldiersOf,
   moodOf, PROFESSION_NAMES, qty, referencePrice, relationLabel, reputation, reputationLabel, SKILL_NAMES, xpForNextLevel,
@@ -8,10 +9,10 @@ import {
 import { ACTIVITY_COLOR } from './VillageMap';
 import type { Game } from './useGame';
 
-type Tab = 'perso' | 'famille' | 'inv' | 'affaires' | 'rel' | 'journal' | 'monde' | 'pouvoir';
+type Tab = 'perso' | 'famille' | 'inv' | 'affaires' | 'rel' | 'journal' | 'monde' | 'pouvoir' | 'requetes';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'perso', label: 'Personnage' }, { id: 'famille', label: 'Famille' }, { id: 'inv', label: 'Besace' }, { id: 'affaires', label: 'Affaires' }, { id: 'rel', label: 'Relations' },
-  { id: 'journal', label: 'Journal' }, { id: 'monde', label: 'Monde' }, { id: 'pouvoir', label: 'Pouvoir' },
+  { id: 'journal', label: 'Journal' }, { id: 'monde', label: 'Monde' }, { id: 'pouvoir', label: 'Pouvoir' }, { id: 'requetes', label: 'Requêtes' },
 ];
 
 export type { Tab as SideTab };
@@ -34,6 +35,7 @@ export function SidePanels({ game, onTalk, tab, onTab }: { game: Game; onTalk: (
         {tab === 'journal' && <Journal state={state} />}
         {tab === 'monde' && <Monde state={state} />}
         {tab === 'pouvoir' && <Pouvoir state={state} />}
+        {tab === 'requetes' && <Requetes state={state} onTalk={onTalk} />}
       </div>
     </section>
   );
@@ -423,6 +425,65 @@ function Famille({ state, onTalk }: { state: GameState; onTalk: (id: string) => 
           return <li key={h.id}><span className="j-time">{formatDate(h.from).split(' ').slice(1).join(' ')}{h.to !== undefined ? ` → ${formatDate(h.to).split(' ').slice(1).join(' ')}` : ' → aujourd’hui'}</span><span>{fullName(c)}{c.alive ? '' : ` († ${c.age} ans)`}</span></li>;
         })}
       </ol>
+      <h4>Chronique de la lignée</h4>
+      {(state.chronicle ?? []).length === 0
+        ? <p className="muted small">Rien encore n’est digne d’être consigné. Les grands moments de ta vie (rangs, promesses tenues ou trahies, noces, naissances, titres) s’inscriront ici.</p>
+        : <ol className="journal chronicle">
+          {(state.chronicle ?? []).slice().reverse().slice(0, 40).map((e, i) => (
+            <li key={i}><span className="j-time">{formatDate(e.time).split(' ').slice(1).join(' ')} · gén. {e.generation}</span><span>{e.text}</span></li>
+          ))}
+        </ol>}
+    </div>
+  );
+}
+
+function Requetes({ state, onTalk }: { state: GameState; onTalk: (id: string) => void }) {
+  const p = state.characters[state.playerId];
+  const rank = socialRank(state);
+  const day = toDate(state.time).day;
+  const where = (id: string) => { const c = state.characters[id]; return c ? state.locations[c.locationId]?.name ?? '?' : '?'; };
+  const who = (id: string) => {
+    const c = state.characters[id];
+    const here = c?.alive && c.locationId === p.locationId;
+    return <button className="link" disabled={!here} onClick={() => here && onTalk(id)} title={here ? 'Lui parler' : `Se trouve à ${where(id)}`}>{c ? fullName(c) : '?'}</button>;
+  };
+  const left = (d: number) => d - day <= 0 ? 'dernier jour' : `${d - day} j restants`;
+  const accepted = acceptedQuests(state);
+  const offers = openOffers(state);
+  const done = quests(state).filter(q => q.status === 'reussie' || q.status === 'echouee').slice(-6).reverse();
+  return (
+    <div className="requetes">
+      <div className="rank-box">
+        <div className="rank-name">{rank.name}</div>
+        <div className="rank-steps" aria-label={`Rang ${rank.level + 1} sur 7`}>{Array.from({ length: 7 }, (_, i) => <i key={i} className={i <= rank.level ? 'on' : ''} />)}</div>
+        {rank.next && <p className="small">Pour devenir <b>{rank.next.name.toLowerCase()}</b> : {rank.next.needs.join(' ; ')}.</p>}
+        <p className="muted small">Promesses tenues : {state.questsKept ?? 0} · non tenues : {(state.chronicle ?? []).filter(c => c.text.includes('manque à sa parole')).length}</p>
+      </div>
+      <h4>Engagements ({accepted.length}/3)</h4>
+      {accepted.length === 0 ? <p className="muted small">Aucune promesse en cours. Les habitants qui ont besoin de toi sont listés ci-dessous : va leur parler.</p> : (
+        <ul className="quest-list">
+          {accepted.map(q => (
+            <li key={q.id} className="quest accepted">
+              <div className="quest-head"><span className={`quest-kind ${q.kind}`}>{QUEST_NAMES[q.kind]}</span><span className="muted small">{left(q.deadlineDay)}</span></div>
+              <div className="small">{q.text}</div>
+              <div className="muted small">Pour {who(q.giverId)} ({where(q.giverId)}){q.targetId && <> · auprès de {who(q.targetId)} ({where(q.targetId)})</>}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <h4>Ils ont besoin de toi</h4>
+      {offers.length === 0 ? <p className="muted small">Personne ne t’a rien demandé pour l’instant. Les requêtes naissent des besoins réels des habitants : pénuries, brouilles, rancunes, enfants affamés.</p> : (
+        <ul className="quest-list">
+          {offers.map(q => (
+            <li key={q.id} className="quest">
+              <div className="quest-head"><span className={`quest-kind ${q.kind}`}>{QUEST_NAMES[q.kind]}</span><span className="muted small">offre valable {left(q.deadlineDay)}</span></div>
+              <div className="small">{q.text}</div>
+              <div className="muted small">Parler à {who(q.giverId)} — {where(q.giverId)}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {done.length > 0 && <><h4>Récemment</h4><ul className="quest-list">{done.map(q => <li key={q.id} className={`quest ${q.status}`}><span className={`quest-kind ${q.kind}`}>{QUEST_NAMES[q.kind]}</span> <span className="small">{q.status === 'reussie' ? 'Parole tenue' : 'Parole non tenue'} — {state.characters[q.giverId] ? fullName(state.characters[q.giverId]) : ''}</span></li>)}</ul></>}
     </div>
   );
 }

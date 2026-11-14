@@ -28,3 +28,4 @@ export * from './playerPower';
 export * from './family';
 export * from './incidents';
 export * from './approaches';
+export * from './quests';

@@ -1,4 +1,4 @@
-# KINGDOM ZERO — Phase 6 (v0.6.0)
+# KINGDOM ZERO — Phase 7 (v0.7.0)
 
 Simulation de vie médiévale / RPG sandbox systémique. Le **pays de Valcendre** vit sans le joueur :
 trois localités reliées par des routes, environ 48 habitants qui travaillent, achètent, mangent, se lient
@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 104 tests automatisés (scénarios A–G, phases 2 à 6, invariants, fuzz) |
+| `npm test` | 115 tests automatisés (scénarios A–G, phases 2 à 7, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -68,6 +68,7 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
   incidents.ts     aléas : sécheresse, belle récolte, grand froid, épidémie, incendie, foire ;
                    commerce et convois de grain physiques, gérance des affaires sans maître (phase 6)
   approaches.ts    initiatives des PNJ envers le joueur (phase 6)
+  quests.ts        requêtes nées de la simulation, rangs sociaux, chronique de la lignée (phase 7)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
   audio.ts         ambiance sonore procédurale (Web Audio, aucun fichier)
   a11y.ts, prefs.ts  fenêtres accessibles (focus, Échap), préférences (son, texte, mouvement, contraste)
@@ -406,6 +407,40 @@ Résultats mesurés sur **16 ans et 14 mondes** (graines 42, 7, 1234, 99, 5, 202
 48 à 63 habitants à la fin, intégrité et bilans d'argent et d'objets exacts.
 
 Format de sauvegarde v7 ; les sauvegardes v1 à v6 sont migrées automatiquement (testé).
+
+## Phase 7 — la boucle de jeu
+
+**Requêtes nées de la simulation** (`quests.ts`). Chaque jour, des habitants peuvent te demander quelque
+chose, mais seulement parce que leur situation réelle l'exige :
+- **Livraison** : l'atelier d'un patron vient de tomber en pénurie d'un intrant ; il paie pour qu'on le livre.
+- **Réconciliation** : un habitant regrette une brouille réelle et te prie de porter des paroles de paix ;
+  les deux relations s'améliorent vraiment.
+- **Vengeance** : un rancunier dont l'ambition est de se venger paie pour voir son ennemi humilié devant
+  témoins ; l'ennemi, et ceux qui l'apprennent, ne te le pardonnent pas.
+- **Nouvelles** : un marchand ou un habitant aisé veut les prix d'une autre localité ; il faut y aller après
+  avoir promis, puis revenir lui rendre compte. Il retient les prix rapportés pour ses propres affaires.
+- **Secours** : un parent n'a plus rien pour son enfant affamé ; une miche pour l'enfant.
+
+La récompense est payée par le donneur sur ses deniers (ou sur la caisse de son atelier), et réduite s'il
+ne peut plus payer. Accepter, c'est donner sa parole : trois engagements au plus, une échéance, et une parole
+non tenue fait perdre la confiance du donneur. Décliner est sans conséquence. On ne te demande rien si l'on
+ne t'aime pas. Les offres se voient dans l'onglet **Requêtes** (touche 9), avec le lieu où trouver chacun ;
+on accepte et on accomplit dans la fenêtre de dialogue.
+
+**Rangs sociaux.** Vagabond, journalier, compagnon (sous contrat), maître de métier (propriétaire),
+notable (affaire, maison ou épargne, et bonne réputation), écuyer, conseiller. Le rang se calcule sur l'état
+réel ; l'onglet Requêtes affiche ce qu'il faut pour monter d'un cran.
+
+**Chronique de la lignée** (onglet Famille). Les rangs atteints pour la première fois, les noces, naissances,
+titres, achats et fondations, les héritages et la mort, les promesses marquantes et toutes les paroles non
+tenues y sont consignés, génération après génération.
+
+Mesuré : sur deux ans au pilote automatique, 60 à 120 requêtes apparaissent, de quatre ou cinq types selon le
+monde (les vengeances sont les plus rares). Sur une partie de deux ans jouée par un script, des promesses sont
+tenues et d'autres non, les bilans d'argent et d'objets restent exacts (13 ms par jour simulé).
+Un test au hasard accepte et accomplit des requêtes sans erreur ni fuite.
+
+Format de sauvegarde v8 ; les sauvegardes v1 à v7 sont migrées automatiquement (testé).
 
 ## État réel du développement
 

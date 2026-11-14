@@ -422,3 +422,23 @@ kbd { font-family: var(--serif); background: var(--wood-3); border: 1px solid va
 /* Débordements sur petit écran : les colonnes de grille peuvent rétrécir */
 .loc-grid > *, .person > *, .biz, .biz-head > * { min-width: 0; }
 .person, .biz { overflow-wrap: anywhere; }
+
+/* ── Phase 7 : requêtes, rang, chronique ─────────────────────── */
+.rank-box { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(201,162,74,.06); margin-bottom: 10px; }
+.rank-name { font-family: var(--display); color: var(--gold-hi); font-size: 1.1rem; letter-spacing: .06em; }
+.rank-steps { display: flex; gap: 4px; margin: 6px 0; }
+.rank-steps i { flex: 1; height: 6px; border-radius: 3px; background: var(--wood-3); }
+.rank-steps i.on { background: linear-gradient(90deg, var(--gold), var(--gold-hi)); }
+.quest-list { list-style: none; padding: 0; margin: 0 0 10px; display: grid; gap: 8px; }
+.quest { padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: rgba(14,10,7,.35); }
+.quest.accepted { border-color: var(--gold); }
+.quest.reussie { border-left: 3px solid #557a45; }
+.quest.echouee { border-left: 3px solid var(--crimson); }
+.quest-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.quest-kind { font-family: var(--display); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; padding: 1px 8px; border-radius: 999px; background: var(--wood-3); color: var(--parch); }
+.quest-kind.humiliation { background: rgba(168,50,45,.35); }
+.quest-kind.secours { background: rgba(127,176,105,.25); }
+.quest-kind.reconciliation { background: rgba(95,163,201,.22); }
+.quest-box { margin-top: 10px; padding-top: 4px; border-top: 1px dashed #b59d70; }
+.chronicle li span:last-child { font-style: italic; }
+.tabs { flex-wrap: wrap; }

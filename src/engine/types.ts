@@ -174,6 +174,15 @@ export type EventType =
 
 /** Aléa du monde (phase 6) : météo, épidémie, incendie, foire… */
 export type IncidentKind = 'secheresse' | 'recolte' | 'grand_froid' | 'epidemie' | 'incendie' | 'foire';
+/** Requête née de la situation réelle d'un PNJ (phase 7). */
+export type QuestKind = 'livraison' | 'reconciliation' | 'humiliation' | 'nouvelles' | 'secours';
+export interface Quest {
+  id: string; kind: QuestKind; giverId: string; targetId?: string; businessId?: string; settlementId?: string;
+  item?: ItemId; count?: number; reward: number; text: string;
+  offeredDay: number; deadlineDay: number; acceptedTime?: number;
+  status: 'offerte' | 'acceptee' | 'reussie' | 'echouee' | 'expiree' | 'refusee' | 'annulee';
+}
+export interface ChronicleEntry { time: number; generation: number; text: string }
 export interface GrainConvoy { id: string; from: string; to: string; marketId: string; cargo: Inventory; departTime: number; arriveTime: number; urgent: boolean }
 export interface Incident { id: string; kind: IncidentKind; settlementId: string; fromDay: number; toDay: number; businessId?: string }
 
@@ -422,6 +431,13 @@ export interface GameState {
   gameOver?: string;
   /** Convois de grain en route (phase 6) : la cargaison existe physiquement pendant le trajet. */
   convoys?: GrainConvoy[];
+  /** Requêtes des habitants (phase 7). */
+  quests?: Quest[];
+  /** Chronique de la lignée du joueur (phase 7). */
+  chronicle?: ChronicleEntry[];
+  chronicleSeq?: number;
+  playerRank?: number;
+  questsKept?: number;
   /** Aléas en cours ou récents (phase 6). */
   incidents?: Incident[];
   /** Dernière heure où un PNJ a abordé le joueur de lui-même (phase 6). */
