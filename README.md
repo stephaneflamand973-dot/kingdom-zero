@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 137 tests automatisés (scénarios A–G, phases 2 à 9, invariants, fuzz) |
+| `npm test` | 138 tests automatisés (scénarios A–G, phases 2 à 9, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -479,7 +479,7 @@ identiques (aucun mort de faim, bilans exacts).
 ## Phase 9 — ton personnage, ton foyer, ta lignée
 
 **Création du personnage.** Au premier lancement (et à chaque « Nouvelle partie »), on choisit prénom, nom,
-sexe, âge (16 à 40 ans) et **deux atouts** parmi huit, chacun avec un effet réel dans le moteur :
+sexe, âge (16 à 40 ans) et **autant d'atouts que l'on veut** parmi neuf, chacun avec un effet réel dans le moteur :
 - **Esprit vif** : apprend tous les savoir-faire deux fois plus vite ;
 - **Robuste** : endurance +2, faim 20 % moins rapide, deux fois moins de maladies ;
 - **Beau parleur** : charisme +2, diplomatie +10, les gens s'attachent 50 % plus vite ;
@@ -487,7 +487,9 @@ sexe, âge (16 à 40 ans) et **deux atouts** parmi huit, chacun avec un effet r�
 - **Main verte** : agriculture +15 ;
 - **Fils d'artisan** : artisanat +12 (compagnon d'emblée dans la plupart des ateliers) ;
 - **Petit pécule** : 60 deniers au départ ;
-- **Né sous une bonne étoile** : deux fois moins d'embuscades.
+- **Né sous une bonne étoile** : deux fois moins d'embuscades ;
+- **Maîtrise double** : gagne les points de compétence deux fois plus vite dans chaque compétence ; cumulé avec
+  Esprit vif, quatre fois plus vite.
 Une graine facultative permet de rejouer le même monde. Les atouts apparaissent dans l'onglet Personnage.
 
 **Bogue corrigé : le foyer du conjoint.** Un joueur locataire qui épousait l'aubergiste faisait emménager sa
@@ -498,6 +500,12 @@ toujours **dormir gratuitement au foyer** — celui du conjoint compris. Les par
 **Avoir des enfants.** Marié, le soir, au foyer avec son conjoint présent et le ventre plein : « Avoir un
 enfant » (onglet Famille), une chance sur trois chaque soir, au plus une fois par jour. La grossesse dure
 70 jours ; l'enfant porte le nom de la lignée et apparaît dans la famille. Une joueuse porte l'enfant elle-même.
+
+**Sauvegardes.** La partie se sauvegarde seule chaque matin et dès qu'on quitte ou masque la page. Le bouton
+💾 (ou la touche **K**) fait une sauvegarde rapide, que la touche **L** recharge. Le menu Partie (**P**) offre la
+sauvegarde automatique, la rapide et six emplacements, chacun avec le nom du personnage, la date de jeu, la bourse
+et l'heure d'enregistrement ; on peut les écraser (après confirmation) ou les effacer. **Télécharger le fichier**
+enregistre la partie en `.json` (à réimporter sur n'importe quel appareil) ; la copie en texte reste possible.
 
 **Testament.** Dans l'onglet Famille, on désigne son héritier parmi sa famille ou ses amis proches : il reçoit
 biens, maisons et affaires, et il est le premier proposé pour reprendre la lignée. Le testament s'efface à la

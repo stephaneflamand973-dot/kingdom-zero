@@ -1,6 +1,6 @@
 // Pont entre le moteur (mutable, sans React) et l'interface.
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { createWorld, loadFromStore, saveToStore, toDate, type ActionResult, type GameState, type KVStore, type PlayerSetup, type WorldEvent } from '../engine';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createWorld, formatClock, formatDate, loadFromStore, saveToStore, toDate, type ActionResult, type GameState, type KVStore, type PlayerSetup, type WorldEvent } from '../engine';
 import { sound } from './audio';
 
 export interface Feed { id: number; time: number; text: string; ok: boolean }
@@ -45,6 +45,8 @@ export function useGame() {
   const saved = useRef(savedState());
   const ref = useRef<GameState>(saved.current ?? createWorld(Math.floor(Math.random() * 1e9)));
   const [creating, setCreating] = useState(!saved.current);
+  const creatingRef = useRef(creating);
+  creatingRef.current = creating;
   const [version, setVersion] = useState(0);
   const [feed, setFeed] = useState<Feed[]>([]);
   const seq = useRef(0);
@@ -104,6 +106,39 @@ export function useGame() {
     setVersion(v => v + 1);
   }, [push]);
 
+  // ── Sauvegardes ──────────────────────────────────────────
+  const [lastSaved, setLastSaved] = useState<number | null>(null);
+  const saveTo = useCallback((slot: string, silent = false): boolean => {
+    if (!store) { if (!silent) push('Le stockage du navigateur est indisponible : télécharge la sauvegarde depuis le menu Partie.', false); return false; }
+    try {
+      saveToStore(store, slot, ref.current);
+      setLastSaved(Date.now());
+      if (!silent) push(`Partie sauvegardée${slot === 'rapide' ? ' (sauvegarde rapide)' : ''}.`, true);
+      return true;
+    } catch { if (!silent) push('Échec de la sauvegarde : stockage du navigateur plein.', false); return false; }
+  }, [push]);
+  const quickSave = useCallback(() => saveTo('rapide'), [saveTo]);
+  const loadFrom = useCallback((slot: string): string | null => {
+    if (!store) return 'Le stockage du navigateur est indisponible.';
+    const r = loadFromStore(store, slot);
+    if (r.error || !r.state) return r.error ?? 'Erreur';
+    ref.current = r.state;
+    lastAutoDay.current = toDate(r.state.time).day;
+    setFeed([]); setToasts([]);
+    push(`Partie chargée : ${formatDate(r.state.time)}, ${formatClock(r.state.time)}.`, true);
+    setVersion(v => v + 1);
+    return null;
+  }, [push]);
+  const quickLoad = useCallback(() => { const err = loadFrom('rapide'); if (err) push(err === 'Aucune sauvegarde dans cet emplacement.' ? 'Aucune sauvegarde rapide : appuie d’abord sur K ou 💾.' : err, false); }, [loadFrom, push]);
+  // filet de sécurité : sauvegarde automatique quand on quitte ou masque la page
+  useEffect(() => {
+    const flush = () => { if (!creatingRef.current) saveTo('auto', true); };
+    const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVis);
+    return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onVis); };
+  }, [saveTo]);
+
   const newGame = useCallback((setup?: PlayerSetup, seed?: number) => {
     const s = createWorld(seed ?? Math.floor(Math.random() * 1e9), setup);
     const p = s.characters[s.playerId];
@@ -112,9 +147,9 @@ export function useGame() {
     if (store) { try { saveToStore(store, 'auto', s); } catch { /* stockage plein */ } }
   }, [replace]);
 
-  return useMemo(() => ({ state: ref.current, version, act, feed, push, replace, newGame, store, toasts, dismiss, creating, setCreating }),
+  return useMemo(() => ({ state: ref.current, version, act, feed, push, replace, newGame, store, toasts, dismiss, creating, setCreating, saveTo, loadFrom, quickSave, quickLoad, lastSaved }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [version, feed, toasts, creating]);
+    [version, feed, toasts, creating, lastSaved]);
 }
 
 export type Game = ReturnType<typeof useGame>;

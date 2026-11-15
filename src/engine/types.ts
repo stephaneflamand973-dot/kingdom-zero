@@ -223,7 +223,7 @@ export interface Loan {
 }
 
 /** Contrat de travail du joueur auprès d'un établissement. */
-export type PerkId = 'esprit_vif' | 'robuste' | 'beau_parleur' | 'bras_solides' | 'main_verte' | 'fils_d_artisan' | 'pecule' | 'bonne_etoile';
+export type PerkId = 'esprit_vif' | 'robuste' | 'beau_parleur' | 'bras_solides' | 'main_verte' | 'fils_d_artisan' | 'pecule' | 'bonne_etoile' | 'maitrise_double';
 export interface PlayerSetup { firstName: string; lastName: string; sex: 'M' | 'F'; age: number; perks: PerkId[] }
 export type Grade = 'apprenti' | 'compagnon' | 'maitre' | 'contremaitre';
 export interface JobContract {

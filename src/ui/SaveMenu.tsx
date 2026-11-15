@@ -1,38 +1,60 @@
 import { useRef, useState } from 'react';
-import { deserialize, formatClock, formatDate, loadFromStore, saveToStore, serialize, slotInfo } from '../engine';
+import { deleteSlot, deserialize, formatClock, formatDate, saveFileName, serialize, slotInfo } from '../engine';
 import type { Game } from './useGame';
 import { useModal } from './a11y';
 
-const SLOTS = ['auto', 'slot1', 'slot2', 'slot3'];
-const SLOT_NAME: Record<string, string> = { auto: 'Sauvegarde automatique', slot1: 'Emplacement I', slot2: 'Emplacement II', slot3: 'Emplacement III' };
+const MANUAL = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6'];
+const SLOT_NAME: Record<string, string> = {
+  auto: 'Sauvegarde automatique', rapide: 'Sauvegarde rapide (K / L)',
+  slot1: 'Emplacement I', slot2: 'Emplacement II', slot3: 'Emplacement III', slot4: 'Emplacement IV', slot5: 'Emplacement V', slot6: 'Emplacement VI',
+};
+
+function ago(iso: string): string {
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return 'à l’instant';
+  if (s < 3600) return `il y a ${Math.round(s / 60)} min`;
+  if (s < 86400) return `il y a ${Math.round(s / 3600)} h`;
+  return `le ${new Date(iso).toLocaleDateString('fr-FR')}`;
+}
 
 export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { state, store, replace, setCreating } = game;
+  const { state, store, replace, setCreating, saveTo, loadFrom } = game;
   const [msg, setMsg] = useState<string | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
+  const [confirm, setConfirm] = useState<{ slot: string; what: 'save' | 'delete' } | null>(null);
   const [exported, setExported] = useState<string | null>(null);
   const [, force] = useState(0);
   const file = useRef<HTMLInputElement>(null);
   const ref = useModal<HTMLDivElement>(onClose);
 
   const doSave = (slot: string) => {
-    if (!store) return setMsg('Le stockage local du navigateur est indisponible : utilise l’export de fichier.');
-    try { saveToStore(store, slot, state); setMsg(`Partie sauvegardée (${SLOT_NAME[slot]}).`); force(x => x + 1); }
-    catch { setMsg('Échec de la sauvegarde (stockage plein ?).'); }
+    if (saveTo(slot, true)) { setMsg(`Partie sauvegardée dans « ${SLOT_NAME[slot]} ».`); force(x => x + 1); }
+    else setMsg('Échec de la sauvegarde (stockage du navigateur indisponible ou plein) : télécharge plutôt le fichier.');
+    setConfirm(null);
   };
   const doLoad = (slot: string) => {
-    if (!store) return;
-    const r = loadFromStore(store, slot);
-    if (r.error || !r.state) return setMsg(r.error ?? 'Erreur');
-    replace(r.state, `Partie chargée : ${formatDate(r.state.time)}, ${formatClock(r.state.time)}.`);
+    const err = loadFrom(slot);
+    if (err) return setMsg(err);
     onClose();
   };
-  const doExport = () => {
+  const doDelete = (slot: string) => { if (store) deleteSlot(store, slot); setConfirm(null); setMsg(`« ${SLOT_NAME[slot]} » effacé.`); force(x => x + 1); };
+  const doDownload = () => {
+    try {
+      const blob = new Blob([serialize(state)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = saveFileName(state);
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setMsg(`Fichier « ${saveFileName(state)} » téléchargé. Garde-le précieusement : « Importer » le recharge, même sur un autre appareil.`);
+    } catch { doCopy(); }
+  };
+  const doCopy = () => {
     const text = serialize(state);
-    navigator.clipboard?.writeText(text)
+    if (!navigator.clipboard) { setExported(text); setMsg('Sélectionne le texte ci-dessous et copie-le.'); return; }
+    navigator.clipboard.writeText(text)
       .then(() => { setExported(null); setMsg('Sauvegarde copiée dans le presse-papiers. Colle-la dans un fichier .json pour la conserver.'); })
       .catch(() => { setExported(text); setMsg('Copie automatique impossible : sélectionne le texte ci-dessous et copie-le.'); });
-    if (!navigator.clipboard) { setExported(text); setMsg('Sélectionne le texte ci-dessous et copie-le.'); }
   };
   const doImport = async (f: File) => {
     const r = deserialize(await f.text());
@@ -41,29 +63,49 @@ export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void })
     onClose();
   };
 
+  const row = (slot: string, manual: boolean) => {
+    const info = store ? slotInfo(store, slot) : null;
+    const asking = confirm?.slot === slot;
+    return (
+      <li key={slot}>
+        <div>
+          <b>{SLOT_NAME[slot]}</b>
+          <div className="muted small">{info
+            ? <>{info.who}{info.generation > 1 ? ` (génération ${info.generation})` : ''} · {formatDate(info.time)}, {formatClock(info.time)} · {info.money} d — enregistrée {ago(info.savedAt)}</>
+            : 'Vide'}</div>
+        </div>
+        <div className="slot-btns">
+          {asking && confirm!.what === 'save' && <><span className="small">Écraser ?</span><button className="btn sm danger" onClick={() => doSave(slot)}>Oui</button><button className="btn sm ghost" onClick={() => setConfirm(null)}>Non</button></>}
+          {asking && confirm!.what === 'delete' && <><span className="small">Effacer ?</span><button className="btn sm danger" onClick={() => doDelete(slot)}>Oui</button><button className="btn sm ghost" onClick={() => setConfirm(null)}>Non</button></>}
+          {!asking && <>
+            {(manual || slot === 'rapide') && <button className="btn sm" disabled={!store} onClick={() => (info ? setConfirm({ slot, what: 'save' }) : doSave(slot))}>Sauvegarder</button>}
+            <button className="btn sm ghost" disabled={!info} onClick={() => doLoad(slot)}>Charger</button>
+            {manual && info && <button className="btn sm ghost" aria-label={`Effacer ${SLOT_NAME[slot]}`} title="Effacer" onClick={() => setConfirm({ slot, what: 'delete' })}>✕</button>}
+          </>}
+        </div>
+      </li>
+    );
+  };
+
   return (
     <div className="modal-back" onClick={onClose}>
       <div ref={ref} className="modal save" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Menu de la partie">
         <button className="close" onClick={onClose} aria-label="Fermer">×</button>
         <h2>Registre de la partie</h2>
-        <p className="muted small">Graine du monde : {state.seed} · Format de sauvegarde v{state.version} · contrôle d’intégrité à chaque chargement.</p>
+        <p className="muted small">
+          La partie se sauvegarde seule chaque matin et quand tu quittes la page. Les sauvegardes restent dans ce navigateur :
+          pour les garder à l’abri ou changer d’appareil, télécharge le fichier. Graine du monde : {state.seed} · format v{state.version}.
+        </p>
+        {!store && <p className="warn">Le stockage du navigateur est indisponible ici : seul le fichier téléchargé conserve ta partie.</p>}
         <ul className="slots">
-          {SLOTS.map(s => {
-            const info = store ? slotInfo(store, s) : null;
-            return (
-              <li key={s}>
-                <div><b>{SLOT_NAME[s]}</b><div className="muted small">{info ? `${formatDate(info.time)} · ${formatClock(info.time)} — enregistré le ${new Date(info.savedAt).toLocaleString('fr-FR')}` : 'Vide'}</div></div>
-                <div className="slot-btns">
-                  {s !== 'auto' && <button className="btn sm" onClick={() => doSave(s)}>Sauvegarder</button>}
-                  <button className="btn sm ghost" disabled={!info} onClick={() => doLoad(s)}>Charger</button>
-                </div>
-              </li>
-            );
-          })}
+          {row('auto', false)}
+          {row('rapide', false)}
+          {MANUAL.map(s => row(s, true))}
         </ul>
         <div className="save-row">
-          <button className="btn ghost" onClick={doExport}>Copier la sauvegarde</button>
+          <button className="btn" onClick={doDownload}>Télécharger le fichier</button>
           <button className="btn ghost" onClick={() => file.current?.click()}>Importer un fichier…</button>
+          <button className="btn ghost" onClick={doCopy}>Copier le texte</button>
           <input ref={file} type="file" accept="application/json,.json" hidden onChange={e => e.target.files?.[0] && doImport(e.target.files[0])} />
           {!confirmNew
             ? <button className="btn danger" onClick={() => setConfirmNew(true)}>Nouvelle partie</button>

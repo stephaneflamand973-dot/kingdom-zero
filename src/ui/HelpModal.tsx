@@ -7,7 +7,7 @@ export const SHORTCUTS: [string, string][] = [
   ['M', 'Manger'], ['B', 'Boire une bière'], ['A', 'Attendre 1 h'], ['J', 'Attendre jusqu’à la prochaine étape (midi, 18h, matin)'],
   ['D', 'Dormir (meilleure option disponible)'], ['V', 'Vivre une semaine (pilote automatique)'],
   ['1 – 9', 'Onglets : Personnage, Famille, Besace, Affaires, Relations, Journal, Monde, Pouvoir, Requêtes'],
-  ['S', 'Couper / rétablir le son'], ['P', 'Menu de la partie (sauvegardes)'], ['? ou H', 'Cette aide'], ['Échap', 'Fermer la fenêtre ouverte'],
+  ['S', 'Couper / rétablir le son'], ['K', 'Sauvegarde rapide'], ['L', 'Recharger la sauvegarde rapide'], ['P', 'Menu de la partie (sauvegardes, fichier)'], ['? ou H', 'Cette aide'], ['Échap', 'Fermer la fenêtre ouverte'],
   ['Tab / Entrée', 'Parcourir la carte et les boutons au clavier'],
 ];
 

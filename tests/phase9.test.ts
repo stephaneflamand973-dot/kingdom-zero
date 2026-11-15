@@ -15,11 +15,28 @@ describe('Création du personnage', () => {
     expect(p.firstName).toBe('Ysabeau');
     expect(p.sex).toBe('F');
     expect(p.age).toBe(30);
-    expect(p.perks).toEqual(['pecule', 'fils_d_artisan']); // deux atouts au plus
+    expect(p.perks).toEqual(['pecule', 'fils_d_artisan', 'robuste']); // autant d'atouts que l'on veut
     expect(p.money).toBe(60);
     expect(p.skills.artisanat).toBe(20);
+    expect(p.attributes.endurance).toBe(7);
     expect(s.dynasty.name).toBe('Boisvert');
     expect(checkIntegrity(s)).toEqual([]);
+  });
+
+  it('« Maîtrise double » fait gagner les points deux fois plus vite dans chaque compétence, et se cumule avec Esprit vif', () => {
+    const mk = (perks: Parameters<typeof createWorld>[1] extends infer T ? T extends { perks: infer P } ? P : never : never) => createWorld(905, { firstName: 'A', lastName: 'B', sex: 'M', age: 24, perks });
+    const base = mk([]), dbl = mk(['maitrise_double']), both = mk(['maitrise_double', 'esprit_vif']);
+    // expérience gagnée pour un même effort (sans franchir de niveau) : exactement ×2, puis ×4 avec Esprit vif
+    const xp = (s: GameState, skill: 'artisanat' | 'combat' | 'gestion' | 'commerce') => { const p = s.characters.player; p.skillXp[skill] = 0; gainXp(s, p, skill, 0.5); return p.skillXp[skill]!; };
+    for (const sk of ['artisanat', 'combat', 'gestion', 'commerce'] as const) {
+      const x0 = xp(base, sk);
+      expect(xp(dbl, sk)).toBeCloseTo(x0 * 2, 6);
+      expect(xp(both, sk)).toBeCloseTo(x0 * 4, 6);
+    }
+    expect(dbl.characters.player.skills.agriculture).toBe(base.characters.player.skills.agriculture); // compétences de départ inchangées
+    const all = createWorld(906, { firstName: 'A', lastName: 'B', sex: 'M', age: 24, perks: ['esprit_vif', 'robuste', 'beau_parleur', 'bras_solides', 'main_verte', 'fils_d_artisan', 'pecule', 'bonne_etoile', 'maitrise_double'] });
+    expect(all.characters.player.perks!.length).toBe(9);
+    expect(checkIntegrity(all)).toEqual([]);
   });
 
   it('« Esprit vif » fait apprendre deux fois plus vite', () => {
@@ -157,5 +174,25 @@ describe('Testament', () => {
     continueAs(s, friend.id);
     expect(s.dynasty.designatedHeir).toBeUndefined();
     expect(checkIntegrity(s)).toEqual([]);
+  });
+});
+
+import { deleteSlot, loadFromStore, saveFileName, saveToStore, slotInfo } from '../src/engine';
+
+describe('Sauvegardes', () => {
+  it('un emplacement indique le personnage, se recharge à l’identique et peut être effacé', () => {
+    const mem = new Map<string, string>();
+    const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    const s = createWorld(940, { firstName: 'Héloïse', lastName: 'de la Haie', sex: 'F', age: 22, perks: ['pecule'] });
+    advanceTime(s, 2 * MIN_PER_DAY);
+    saveToStore(store, 'rapide', s);
+    const info = slotInfo(store, 'rapide')!;
+    expect(info.who).toBe('Héloïse de la Haie');
+    expect(info.money).toBe(s.characters.player.money);
+    const back = loadFromStore(store, 'rapide');
+    expect(JSON.stringify(back.state)).toBe(JSON.stringify(s));
+    expect(saveFileName(s)).toMatch(/^kingdom-zero-heloise-de-la-haie-jour-\d+\.json$/);
+    deleteSlot(store, 'rapide');
+    expect(slotInfo(store, 'rapide')).toBeNull();
   });
 });

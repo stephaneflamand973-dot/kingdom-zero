@@ -15,7 +15,7 @@ function Gauge({ label, value, color, invert = false }: { label: string; value: 
 
 const INCIDENT_ICON: Record<string, string> = { secheresse: '☀', recolte: '🌾', grand_froid: '❄', epidemie: '☠', incendie: '🔥', foire: '⚑' };
 
-export function TopBar({ state, onMenu, onHelp, soundOn, onSound }: { state: GameState; onMenu: () => void; onHelp: () => void; soundOn: boolean; onSound: () => void }) {
+export function TopBar({ state, onMenu, onHelp, soundOn, onSound, onSave }: { state: GameState; onMenu: () => void; onHelp: () => void; soundOn: boolean; onSound: () => void; onSave?: () => void }) {
   const p = state.characters[state.playerId];
   const d = toDate(state.time);
   const rep = reputation(state, p.id);
@@ -51,6 +51,7 @@ export function TopBar({ state, onMenu, onHelp, soundOn, onSound }: { state: Gam
       </div>
       <div className="tb-tools">
         <button className="btn ghost icon-btn" onClick={onSound} aria-pressed={soundOn} title={soundOn ? 'Couper le son (S)' : 'Rétablir le son (S)'} aria-label={soundOn ? 'Couper le son' : 'Rétablir le son'}>{soundOn ? '🔊' : '🔇'}</button>
+        {onSave && <button className="btn ghost icon-btn" onClick={onSave} title="Sauvegarde rapide (K) — recharger : L" aria-label="Sauvegarde rapide">💾</button>}
         <button className="btn ghost icon-btn" onClick={onHelp} title="Aide, raccourcis et options (?)" aria-label="Aide et options">?</button>
         <button className="btn ghost menu-btn" onClick={onMenu} title="Sauvegardes (P)">☰ Partie</button>
       </div>

@@ -69,6 +69,8 @@ function Game() {
       case 'j': act(s => wait(s, minutesUntilHour(s.time, nextStop(toDate(s.time).hour).hour))); break;
       case 'v': act(s => liveDays(s, 7)); break;
       case 'p': setMenu(true); break;
+      case 'k': game.quickSave(); break;
+      case 'l': game.quickLoad(); break;
       case 'd': {
         const o = sleepOptions(state).find(x => x.ok);
         if (o) act(s => sleep(s, o.mode));
@@ -77,7 +79,7 @@ function Game() {
       default: return;
     }
     e.preventDefault();
-  }, [act, modalOpen, prefs.sound, state, update]);
+  }, [act, modalOpen, prefs.sound, state, update, game]);
   useEffect(() => {
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
@@ -86,7 +88,7 @@ function Game() {
   return (
     <div className="app">
       <a className="skip" href="#actions">Aller aux actions</a>
-      <TopBar state={state} onMenu={() => setMenu(true)} onHelp={() => setHelp(true)} soundOn={prefs.sound} onSound={() => update({ sound: !prefs.sound })} />
+      <TopBar state={state} onMenu={() => setMenu(true)} onHelp={() => setHelp(true)} soundOn={prefs.sound} onSound={() => update({ sound: !prefs.sound })} onSave={!blocked ? game.quickSave : undefined} />
       <main className="layout">
         <div className="col-main">
           <VillageMap state={state} onTravel={id => act(s => moveTo(s, id))} onSelect={() => { /* déjà sur place */ }} />

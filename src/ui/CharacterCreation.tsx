@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MAX_PERKS, PERKS, type PerkId } from '../engine';
+import { PERKS, type PerkId } from '../engine';
 import { useModal } from './a11y';
 import type { Game } from './useGame';
 
@@ -15,7 +15,7 @@ export function CharacterCreation({ game, canCancel }: { game: Game; canCancel: 
   const [perks, setPerks] = useState<PerkId[]>([]);
   const [seed, setSeed] = useState('');
   const ref = useModal<HTMLDivElement>(canCancel ? () => game.setCreating(false) : undefined);
-  const toggle = (id: PerkId) => setPerks(ps => ps.includes(id) ? ps.filter(x => x !== id) : ps.length >= MAX_PERKS ? ps : [...ps, id]);
+  const toggle = (id: PerkId) => setPerks(ps => ps.includes(id) ? ps.filter(x => x !== id) : [...ps, id]);
   const random = () => {
     const s = Math.random() < 0.5 ? 'M' : 'F';
     setSex(s);
@@ -39,14 +39,14 @@ export function CharacterCreation({ game, canCancel }: { game: Game; canCancel: 
           </fieldset>
           <label>Âge : {age} ans<input type="range" min={16} max={40} value={age} onChange={e => setAge(Number(e.target.value))} /></label>
         </div>
-        <h3 className="dialog-sub">Atouts de départ ({perks.length}/{MAX_PERKS})</h3>
+        <h3 className="dialog-sub">Atouts de départ ({perks.length} choisi{perks.length > 1 ? 's' : ''}, sans limite)</h3>
+        <div className="save-row"><button className="btn sm ghost" onClick={() => setPerks(PERKS.map(p => p.id))}>Tout prendre</button><button className="btn sm ghost" onClick={() => setPerks([])}>Aucun</button></div>
         <ul className="perk-list">
           {PERKS.map(pk => {
             const on = perks.includes(pk.id);
-            const full = !on && perks.length >= MAX_PERKS;
             return (
               <li key={pk.id}>
-                <button className={`perk ${on ? 'on' : ''}`} aria-pressed={on} disabled={full} onClick={() => toggle(pk.id)}>
+                <button className={`perk ${on ? 'on' : ''}`} aria-pressed={on} onClick={() => toggle(pk.id)}>
                   <b>{pk.name}</b><span>{pk.description}</span>
                 </button>
               </li>

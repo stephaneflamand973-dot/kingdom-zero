@@ -16,14 +16,17 @@ export const PERKS: PerkDef[] = [
   { id: 'fils_d_artisan', name: 'Fils d’artisan', description: 'Artisanat +12 : entre directement comme compagnon dans la plupart des ateliers.' },
   { id: 'pecule', name: 'Petit pécule', description: 'Arrive au village avec 60 deniers en poche au lieu de rien.' },
   { id: 'bonne_etoile', name: 'Né sous une bonne étoile', description: 'Deux fois moins de risques d’embuscade sur les routes.' },
+  { id: 'maitrise_double', name: 'Maîtrise double', description: 'Gagne les points de compétence deux fois plus vite, dans chaque compétence (cumulable avec Esprit vif : quatre fois plus vite).' },
 ];
-export const MAX_PERKS = 2;
+/** Aucune limite : on peut cumuler tous les atouts. */
+export const MAX_PERKS = PERKS.length;
 
 export const hasPerk = (c: Character | undefined, id: PerkId): boolean => !!c?.perks?.includes(id);
 
 /** Applique les effets permanents de départ (attributs, compétences, bourse). */
 export function applyStartingPerks(c: Character, perks: PerkId[]): void {
-  c.perks = [...new Set(perks)].slice(0, MAX_PERKS);
+  const known = new Set(PERKS.map(p => p.id));
+  c.perks = [...new Set(perks)].filter(p => known.has(p));
   const cap = (v: number, max: number) => Math.min(max, v);
   for (const p of c.perks) {
     switch (p) {

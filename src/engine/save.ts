@@ -106,8 +106,20 @@ export function loadFromStore(store: KVStore, slot: string) {
   if (!t) return { error: 'Aucune sauvegarde dans cet emplacement.' };
   return deserialize(t);
 }
-export function slotInfo(store: KVStore, slot: string): { savedAt: string; time: number } | null {
+export interface SlotInfo { savedAt: string; time: number; who: string; generation: number; money: number }
+export function slotInfo(store: KVStore, slot: string): SlotInfo | null {
   const t = store.getItem(KEY(slot));
   if (!t) return null;
-  try { const f = JSON.parse(t) as SaveFile; return { savedAt: f.savedAt, time: f.state.time }; } catch { return null; }
+  try {
+    const f = JSON.parse(t) as SaveFile;
+    const p = f.state.characters?.[f.state.playerId];
+    return { savedAt: f.savedAt, time: f.state.time, who: p ? `${p.firstName} ${p.lastName}` : '?', generation: f.state.dynasty?.generation ?? 1, money: p?.money ?? 0 };
+  } catch { return null; }
+}
+export function deleteSlot(store: KVStore, slot: string): void { store.removeItem(KEY(slot)); }
+/** Nom de fichier lisible pour l'export d'une partie. */
+export function saveFileName(state: GameState): string {
+  const p = state.characters[state.playerId];
+  const slug = `${p.firstName}-${p.lastName}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/-+/g, '-').toLowerCase();
+  return `kingdom-zero-${slug}-jour-${Math.floor((state.time + 360) / 1440)}.json`;
 }
