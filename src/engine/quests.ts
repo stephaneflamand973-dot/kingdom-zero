@@ -41,7 +41,8 @@ export function socialRank(state: GameState, c: Character = state.characters[sta
   const owns = ownedBusinesses(state, c).length;
   const home = state.properties.some(p => p.ownerId === c.id);
   const rep = reputation(state, c.id).score;
-  const contract = !!activeContract(state, c.id) || (!!c.employerId && !c.isPlayer);
+  const k = activeContract(state, c.id);
+  const contract = (!!k && k.grade !== 'apprenti') || (!!c.employerId && !c.isPlayer);
   const names = ['Vagabond', 'Journalier', 'Compagnon', 'Maître de métier', 'Notable', 'Écuyer', 'Conseiller'];
   let level = 0;
   if (c.money >= 20 || c.employerId || owns) level = 1;
@@ -52,7 +53,7 @@ export function socialRank(state: GameState, c: Character = state.characters[sta
   if (c.title === 'conseiller') level = 6;
   const needs: Record<number, string[]> = {
     0: ['gagner 20 d ou travailler à la journée'],
-    1: ['signer un contrat chez un patron (gagner d’abord sa confiance)', 'ou racheter / fonder une affaire'],
+    1: ['passer compagnon : entrer en apprentissage dans un atelier, ou signer un contrat là où l’on te connaît', 'ou racheter / fonder une affaire'],
     2: ['posséder sa propre affaire (rachat ou fondation)'],
     3: [`une réputation d’au moins 15 (actuellement ${rep})`, 'posséder sa maison ou 600 d d’épargne'],
     4: ['être fait écuyer par un seigneur (combat 25 et son estime, ou 200 d)'],

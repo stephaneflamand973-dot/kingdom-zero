@@ -1,14 +1,17 @@
 // ─────────────────────────────────────────────────────────────
 // Contrats : place salariée du joueur et commandes d'approvisionnement.
 // ─────────────────────────────────────────────────────────────
-import { ITEMS, MIN_SKILL_FOR_DAYWORK, PROFESSION_BY_BUSINESS, SKILL_NAMES, WORK_SKILL } from './data';
+import { ITEMS, PROFESSION_BY_BUSINESS, SKILL_NAMES, WORK_SKILL } from './data';
 import { askPrice, fireEmployee, P, reserveFor, trade, transferItem, transferMoney } from './economy';
 import { recordIOU } from './finance';
 import { getEvent, logEvent } from './events';
 import { fem, refusalText } from './narrative';
 import { getRelation, modifyRelation } from './social';
 import { toDate } from './time';
-import type { ActionResult, Business, Character, GameState, ItemId, JobContract, SupplyOrder } from './types';
+import type { ActionResult, Business, Character, GameState, Grade, ItemId, JobContract, SupplyOrder } from './types';
+import { careerReview, GRADE_NAMES, gradeWage, hiringGrade, journeymanSkill } from './career';
+import { chronicle } from './quests';
+import { gainXp } from './skills';
 import { businessesIn, fullName, newId, player, qty, settlementIdOf } from './util';
 
 export const CONTRACT_HOURS = 24;
@@ -22,7 +25,7 @@ export function contractWage(_state: GameState, b: Business, p: Character): numb
   return Math.max(2, Math.round(b.wage * (0.85 + skill / 100)));
 }
 
-export interface Offer { ok: boolean; reason?: string; wage: number; hours: number }
+export interface Offer { ok: boolean; reason?: string; wage: number; hours: number; grade?: Grade }
 
 /** Le propriétaire offrirait-il une place au joueur ? */
 export function jobOffer(state: GameState, b: Business, p: Character): Offer {
@@ -33,16 +36,23 @@ export function jobOffer(state: GameState, b: Business, p: Character): Offer {
   const stewardId = state.settlements[settlementIdOf(state, b.locationId)].stewardId;
   const owner = b.ownerId ? state.characters[b.ownerId] : stewardId ? state.characters[stewardId] : undefined;
   const skill = WORK_SKILL[b.kind];
-  if (p.skills[skill] < MIN_SKILL_FOR_DAYWORK[b.kind] + 5) return no(`${owner?.firstName ?? 'On'} exige plus d’expérience (${SKILL_NAMES[skill]} ${p.skills[skill]}/${MIN_SKILL_FOR_DAYWORK[b.kind] + 5}).`);
+  // phase 8 : sans l'expérience d'un compagnon, on entre comme apprenti (gages faibles, on apprend vite)
+  const apprentice = p.skills[skill] < journeymanSkill(b);
+  if (apprentice && b.kind === 'manor') return no(`L'intendance ne forme pas d'apprentis (${SKILL_NAMES[skill]} ${p.skills[skill]}/${journeymanSkill(b)}).`);
   if (owner && owner.alive) {
     const r = getRelation(state, owner.id, p.id);
     const thief = owner.knownEvents.some(id => { const e = getEvent(state, id); return e?.type === 'theft_caught' && e.actorId === p.id; });
-    if (thief || r.trust < 0 || r.affinity < 0) return no(refusalText(state, owner, "t'engager"));
-    if (r.trust < 8 && r.affinity < 8) return no(fem(owner, `${owner.firstName} ne te connaît pas assez : travaille d’abord quelques journées pour lui.`));
+    if (thief || r.trust < 0 || r.affinity < 0) return no(refusalText(state, owner, apprentice ? 'te prendre en apprentissage' : "t'engager"));
+    // un maître prend un apprenti sans le connaître ; un compagnon doit d'abord avoir fait ses preuves
+    if (!apprentice && r.trust < 8 && r.affinity < 8) return no(fem(owner, `${owner.firstName} ne te connaît pas assez : travaille d’abord quelques journées pour lui.`));
   }
-  if (b.employees.length >= b.maxWorkers) return no(`${b.name} a déjà tout son personnel.`);
-  if (b.treasury < reserveFor(b)) return no(`${b.name} n’a pas les moyens d’embaucher.`);
-  return { ok: true, wage, hours: CONTRACT_HOURS };
+  if (apprentice && !owner?.alive) return no('Il n’y a pas de maître ici pour te former.');
+  // un apprenti s'ajoute au personnel (une place d'apprentissage par atelier)
+  const apprenticesHere = state.contracts.filter(k => k.status === 'active' && k.businessId === b.id && k.grade === 'apprenti').length;
+  if (apprentice ? apprenticesHere >= 1 || b.employees.length >= b.maxWorkers + 1 : b.employees.length >= b.maxWorkers) return no(apprentice ? `${b.name} a déjà son apprenti.` : `${b.name} a déjà tout son personnel.`);
+  if (b.treasury < (apprentice ? 40 : reserveFor(b))) return no(`${b.name} n’a pas les moyens d’embaucher.`);
+  const grade: Grade = apprentice ? 'apprenti' : hiringGrade(b, p);
+  return { ok: true, wage: gradeWage(b, p, grade), hours: CONTRACT_HOURS, grade };
 }
 
 export function signContract(state: GameState, businessId: string): ActionResult {
@@ -55,7 +65,7 @@ export function signContract(state: GameState, businessId: string): ActionResult
   const day = toDate(state.time).day;
   const c: JobContract = {
     id: newId(state, 'k'), businessId: b.id, workerId: p.id, wage: o.wage, hoursPerWeek: o.hours, startDay: day,
-    hoursThisWeek: 0, goodWeeks: 0, strikes: 0, status: 'active',
+    hoursThisWeek: 0, goodWeeks: 0, strikes: 0, status: 'active', grade: o.grade ?? 'compagnon',
   };
   state.contracts.push(c);
   b.employees.push(p.id);
@@ -66,9 +76,15 @@ export function signContract(state: GameState, businessId: string): ActionResult
   if (owner) modifyRelation(state, owner.id, p.id, 3, 3);
   const ev = logEvent(state, {
     type: 'contract', actorId: p.id, targetId: owner?.id, businessId: b.id, locationId: b.locationId, importance: 2,
-    text: `${fullName(p)} est engagé à ${b.name} : ${o.wage} d de l'heure, ${o.hours} h par semaine au minimum.`,
+    text: o.grade === 'apprenti'
+      ? `${fullName(p)} entre en apprentissage à ${b.name}${owner ? ` auprès de ${fullName(owner)}` : ''} : ${o.wage} d de l'heure.`
+      : `${fullName(p)} est engagé comme ${GRADE_NAMES[o.grade ?? 'compagnon'].toLowerCase()} à ${b.name} : ${o.wage} d de l'heure, ${o.hours} h par semaine au minimum.`,
     witnesses: owner ? [owner.id] : [],
   });
+  if (o.grade === 'apprenti') {
+    chronicle(state, ev.text);
+    return { ok: true, message: `Te voilà apprenti à ${b.name} : ${o.wage} d de l’heure seulement, mais tu apprends le métier deux à trois fois plus vite. À ${SKILL_NAMES[WORK_SKILL[b.kind]]} ${journeymanSkill(b)}, tu passeras compagnon.`, minutes: 0, eventIds: [ev.id] };
+  }
   return { ok: true, message: `Te voilà engagé à ${b.name} : ${o.wage} d de l’heure, au moins ${o.hours} h par semaine. Tes heures ne dépendent plus du bon vouloir du patron.`, minutes: 0, eventIds: [ev.id] };
 }
 
@@ -118,11 +134,9 @@ export function weeklyContractReview(state: GameState): void {
         text: `${owner ? fullName(owner) : "L'intendance"} se dit satisfait du travail de ${fullName(w)} à ${b.name}.`,
         witnesses: owner ? [owner.id] : [],
       });
-      const fair = contractWage(state, b, w);
-      if (fair > c.wage) {
-        c.wage = fair;
-        logEvent(state, { type: 'contract', actorId: w.id, businessId: b.id, importance: 1, text: `Ton salaire à ${b.name} passe à ${fair} d de l'heure.` });
-      }
+      // une semaine bien remplie fait progresser dans le métier, puis vient la revue de carrière
+      gainXp(state, w, WORK_SKILL[b.kind], 4);
+      careerReview(state, c, b, w, text => chronicle(state, text));
     }
     c.hoursThisWeek = 0;
   }

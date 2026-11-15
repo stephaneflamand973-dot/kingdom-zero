@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  acceptedQuests, openOffers, quests, QUEST_NAMES, socialRank,
+  acceptedQuests, openOffers, quests, QUEST_NAMES, socialRank, askRaise, careerStatus, GRADES, GRADE_NAMES, raiseChance,
   activeIncidents, INCIDENT_EFFECTS, INCIDENT_NAMES, toDate, residents, businessesIn, settlementIdOf, aliveCharacters, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
   activeContract, activeLoans, ambitionLabel, quitJob, repayLoan, reputationTags, orgList, landsOf, soldiersOf,
   moodOf, PROFESSION_NAMES, qty, referencePrice, relationLabel, reputation, reputationLabel, SKILL_NAMES, xpForNextLevel,
@@ -119,12 +119,13 @@ function Affaires({ game }: { game: Game }) {
   return (
     <div className="affaires">
       <h4>Emploi</h4>
-      {k ? (
+      {k ? (<>
         <div className="card-line">
           <div><b>{state.businesses[k.businessId].name}</b> · {k.wage} d/h<div className="muted small">{k.hoursThisWeek} h sur {k.hoursPerWeek} h exigées cette semaine · {k.goodWeeks} semaine{k.goodWeeks > 1 ? 's' : ''} satisfaisante{k.goodWeeks > 1 ? 's' : ''}{k.strikes ? ` · ${k.strikes} avertissement` : ''}</div></div>
           <button className="btn sm ghost" disabled={over} onClick={() => act(quitJob)}>Démissionner</button>
         </div>
-      ) : <p className="muted small">Aucune place. Travaille à la journée, puis demande une place à un patron qui te connaît.</p>}
+        <Carriere game={game} />
+      </>) : <p className="muted small">Aucune place. Entre en apprentissage dans un atelier (aucune expérience exigée), ou travaille à la journée puis demande une place à un patron qui te connaît.</p>}
       <h4>Logement</h4>
       {homes.length === 0 && <p className="muted small">Aucun. Une chambre se loue à l’auberge, une maison s’achète auprès de l’intendance.</p>}
       {homes.map(pr => (
@@ -484,6 +485,41 @@ function Requetes({ state, onTalk }: { state: GameState; onTalk: (id: string) =>
         </ul>
       )}
       {done.length > 0 && <><h4>Récemment</h4><ul className="quest-list">{done.map(q => <li key={q.id} className={`quest ${q.status}`}><span className={`quest-kind ${q.kind}`}>{QUEST_NAMES[q.kind]}</span> <span className="small">{q.status === 'reussie' ? 'Parole tenue' : 'Parole non tenue'} — {state.characters[q.giverId] ? fullName(state.characters[q.giverId]) : ''}</span></li>)}</ul></>}
+    </div>
+  );
+}
+
+function Carriere({ game }: { game: Game }) {
+  const { state, act } = game;
+  const c = careerStatus(state);
+  if (!c) return null;
+  const idx = GRADES.indexOf(c.grade);
+  const pct = Math.min(100, Math.round(c.xp / c.xpNeeded * 100));
+  const chance = Math.round(raiseChance(state, c.contract) * 100);
+  return (
+    <div className="career">
+      <ol className="grades" aria-label={`Grade : ${GRADE_NAMES[c.grade]}`}>
+        {GRADES.map((g, i) => <li key={g} className={i < idx ? 'past' : i === idx ? 'now' : ''}>{GRADE_NAMES[g]}</li>)}
+      </ol>
+      <div className="skill" title={`${Math.round(c.xp)} / ${Math.round(c.xpNeeded)} avant le prochain point`}>
+        <span>{SKILL_NAMES[c.skill]}</span>
+        <div className="gauge-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="gauge-fill" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#b8862f,#e3a83b)' }} /></div>
+        <b>{c.level}</b>
+      </div>
+      <p className="muted small">{c.rate > 1 ? `Tu apprends ${c.rate.toLocaleString('fr-FR')} fois plus vite ici${c.grade === 'apprenti' ? ' (apprentissage)' : ' (ton patron en sait plus que toi)'}.` : 'Tu n’apprends plus rien de ton patron : seule la pratique te fait progresser.'}</p>
+      {c.next ? (
+        <div className="next-grade">
+          <b>Pour passer {GRADE_NAMES[c.next.grade].toLowerCase()}</b> <span className="muted small">({c.next.wage} d/h)</span>
+          <ul>{c.next.needs.map(n => <li key={n.label} className={n.ok ? 'ok' : ''}>{n.ok ? '✔' : '○'} {n.label}</li>)}</ul>
+          <p className="muted small">La promotion est décidée à la revue du lundi, après une semaine où tu as fait tes heures.</p>
+        </div>
+      ) : <p className="small">Tu es au sommet de l’atelier : prime sur les bénéfices chaque lundi, et l’affaire te revient si le patron meurt sans héritier.</p>}
+      {c.grade !== 'apprenti' && (
+        <button className="btn sm" disabled={!!state.gameOver || c.raiseInDays > 0} onClick={() => act(askRaise)}
+          title="Dépend de la confiance du patron, de ton ancienneté, de ta diplomatie et de la santé de la caisse">
+          Demander une augmentation <small>{c.raiseInDays > 0 ? `dans ${c.raiseInDays} j` : `≈ ${chance} % · en personne`}</small>
+        </button>
+      )}
     </div>
   );
 }

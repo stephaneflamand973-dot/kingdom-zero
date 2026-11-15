@@ -4,6 +4,7 @@
 // franchie (résolution horaire), puis à chaque frontière de jour.
 // `processedHours` garantit qu'une heure n'est jamais simulée deux fois.
 // ─────────────────────────────────────────────────────────────
+import { learningRate } from './career';
 import { cleanupQuests, dailyChronicle, dailyQuests } from './quests';
 import { npcApproaches } from './approaches';
 import { weeklyPatronage } from './family';
@@ -137,7 +138,12 @@ export function hourTick(state: GameState): void {
       const k = state.contracts.find(x => x.status === 'active' && x.workerId === c.id && x.businessId === b.id);
       if (k) k.hoursThisWeek += 1;
     }
-    gainXp(state, c, skill, 1);
+    gainXp(state, c, skill, learningRate(state, c, b));
+    // un maître seconde le patron : il apprend à tenir une affaire (phase 8)
+    if (c.isPlayer && b.ownerId !== c.id) {
+      const g = state.contracts.find(x => x.status === 'active' && x.workerId === c.id && x.businessId === b.id)?.grade;
+      if (g === 'maitre' || g === 'contremaitre') gainXp(state, c, 'gestion', 0.4);
+    }
     const contractWage = c.isPlayer ? state.contracts.find(k => k.status === 'active' && k.workerId === c.id && k.businessId === b.id)?.wage : undefined;
     if (b.ownerId !== c.id) payWage(state, b, c, c.isPlayer ? c.activity.wage ?? contractWage ?? b.wage : b.wage);
   }
@@ -407,9 +413,13 @@ export function killCharacter(state: GameState, c: Character, cause: string): vo
   const inherited = settleEstate(state, c);
   // Biens : sans famille, l'héritage revient à l'intendance du village
   for (const owned of inherited ? [] : ownedBusinesses(state, c)) {
-    const heir = owned.employees.map(id => state.characters[id]).filter(e => e.alive && !e.isPlayer)
+    // phase 8 : le contremaître (s'il s'agit du joueur) reprend l'affaire avant tout autre employé
+    const foreman = state.contracts.find(k => k.status === 'active' && k.businessId === owned.id && k.grade === 'contremaitre');
+    const foremanChar = foreman ? state.characters[foreman.workerId] : undefined;
+    const heir = (foremanChar?.alive ? foremanChar : undefined) ?? owned.employees.map(id => state.characters[id]).filter(e => e.alive && !e.isPlayer)
       .sort((a, b) => b.skills.gestion - a.skills.gestion || (a.id < b.id ? -1 : 1))[0];
     if (heir) {
+      if (foreman && heir.id === foreman.workerId) { foreman.status = 'ended'; foreman.endReason = 'reprise de l’affaire'; }
       owned.employees = owned.employees.filter(id => id !== heir.id);
       owned.ownerId = heir.id;
       heir.employerId = owned.id;

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  GRADE_NAMES, gradeOf, foundingCost,
   activeContract, applyForJob, businessesForSale, deliver, jobOffer, openOrders, quitJob, takeOrder,
   buyHome, carryCapacity, found, FOUNDABLE, FOUNDING_COST, hasAccess, ITEM_IDS, leaveHome, ownerOrder, propertiesAt, purchaseBusiness,
   purchaseOffer, rentHome, RECIPES, settlementIdOf, store, takeOut, weightOf, WEIGHT, type BusinessKind, type Property,
@@ -160,13 +161,15 @@ function ContractRow({ game, b }: { game: Game; b: Business }) {
     <div className="contract-row">
       {k && k.businessId === b.id ? (
         <div className="work-row">
-          <div className="work-info"><strong>Ta place</strong><span>{k.wage} d/h · {k.hoursThisWeek}/{k.hoursPerWeek} h cette semaine{k.strikes ? ` · ${k.strikes} avertissement` : ''}</span></div>
+          <div className="work-info"><strong>Ta place · {GRADE_NAMES[gradeOf(k)]}</strong><span>{k.wage} d/h · {k.hoursThisWeek}/{k.hoursPerWeek} h cette semaine{k.strikes ? ` · ${k.strikes} avertissement` : ''}</span></div>
           <button className="btn sm ghost" disabled={over} onClick={() => act(quitJob)}>Démissionner</button>
         </div>
       ) : b.kind !== 'market' && (
         <div className="work-row">
-          <div className="work-info"><strong>Place salariée</strong><span>{offer.ok ? `${offer.wage} d/h garantis, ${offer.hours} h par semaine au minimum` : offer.reason}</span></div>
-          <button className="btn sm" disabled={!offer.ok || over} onClick={() => act(s => applyForJob(s, b.id))}>Demander</button>
+          <div className="work-info"><strong>{offer.grade === 'apprenti' ? 'Apprentissage' : `Place de ${GRADE_NAMES[offer.grade ?? 'compagnon'].toLowerCase()}`}</strong><span>{offer.ok
+            ? offer.grade === 'apprenti' ? `${offer.wage} d/h seulement, mais on t’apprend le métier (${offer.hours} h par semaine au minimum)` : `${offer.wage} d/h garantis, ${offer.hours} h par semaine au minimum`
+            : offer.reason}</span></div>
+          <button className="btn sm" disabled={!offer.ok || over} onClick={() => act(s => applyForJob(s, b.id))}>{offer.grade === 'apprenti' ? 'Entrer en apprentissage' : 'Demander'}</button>
         </div>
       )}
       {mine.map(o => (
@@ -303,8 +306,8 @@ function FoundingCard({ game }: { game: Game }) {
         {FOUNDABLE.map(k => (
           <li key={k}>
             <span className="ico">🏗</span>
-            <div><b>{names[k]}</b><div className="muted small">{FOUNDING_COST[k]} d de travaux + {capital} d</div></div>
-            <button className="btn sm" disabled={!!state.gameOver || p.money < (FOUNDING_COST[k] ?? 0) + capital} onClick={() => act(s => found(s, k, capital))}>Fonder</button>
+            <div><b>{names[k]}</b><div className="muted small">{foundingCost(p, k)} d de travaux{foundingCost(p, k)! < (FOUNDING_COST[k] ?? 0) ? ' (prix de maître)' : ''} + {capital} d</div></div>
+            <button className="btn sm" disabled={!!state.gameOver || p.money < (foundingCost(p, k) ?? 0) + capital} onClick={() => act(s => found(s, k, capital))}>Fonder</button>
           </li>
         ))}
       </ul>

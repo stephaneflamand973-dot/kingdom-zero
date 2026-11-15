@@ -97,6 +97,8 @@ export interface Character {
   attributes: Record<AttrId, number>; // 1..10
   skills: Record<SkillId, number>;    // 0..100
   skillXp: Partial<Record<SkillId, number>>;
+  /** Plus haut grade obtenu par métier (phase 8) : un maître le reste chez un nouveau patron. */
+  gradeHeld?: Partial<Record<SkillId, 'apprenti' | 'compagnon' | 'maitre' | 'contremaitre'>>;
   traits: TraitId[];
   goal: Goal;
   relations: Record<string, Relation>;
@@ -170,7 +172,7 @@ export type EventType =
   | 'ambush' | 'racket' | 'vandalism' | 'recruit' | 'arrest' | 'jail' | 'bounty' | 'tribute' | 'tax_change'
   | 'revolt' | 'war' | 'battle' | 'conquest' | 'peace' | 'plot' | 'assassination' | 'succession' | 'title' | 'combat' | 'diplomacy'
   | 'courtship' | 'wedding' | 'pregnancy' | 'birth' | 'coming_of_age' | 'estate' | 'adoption' | 'widowhood'
-  | 'incident' | 'approach';
+  | 'incident' | 'approach' | 'promotion';
 
 /** Aléa du monde (phase 6) : météo, épidémie, incendie, foire… */
 export type IncidentKind = 'secheresse' | 'recolte' | 'grand_froid' | 'epidemie' | 'incendie' | 'foire';
@@ -220,6 +222,7 @@ export interface Loan {
 }
 
 /** Contrat de travail du joueur auprès d'un établissement. */
+export type Grade = 'apprenti' | 'compagnon' | 'maitre' | 'contremaitre';
 export interface JobContract {
   id: string;
   businessId: string;
@@ -232,6 +235,9 @@ export interface JobContract {
   strikes: number;
   status: 'active' | 'ended';
   endReason?: string;
+  grade?: Grade;          // phase 8 : apprenti, compagnon, maître, contremaître
+  raises?: number;        // augmentations négociées (d/h)
+  lastRaiseDay?: number;
 }
 
 /** Commande d'approvisionnement affichée au tableau de la place. */

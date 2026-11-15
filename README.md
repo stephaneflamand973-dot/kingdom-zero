@@ -1,4 +1,4 @@
-# KINGDOM ZERO — Phase 7 (v0.7.0)
+# KINGDOM ZERO — Phase 8 (v0.8.0)
 
 Simulation de vie médiévale / RPG sandbox systémique. Le **pays de Valcendre** vit sans le joueur :
 trois localités reliées par des routes, environ 48 habitants qui travaillent, achètent, mangent, se lient
@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 115 tests automatisés (scénarios A–G, phases 2 à 7, invariants, fuzz) |
+| `npm test` | 127 tests automatisés (scénarios A–G, phases 2 à 8, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -69,6 +69,7 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
                    commerce et convois de grain physiques, gérance des affaires sans maître (phase 6)
   approaches.ts    initiatives des PNJ envers le joueur (phase 6)
   quests.ts        requêtes nées de la simulation, rangs sociaux, chronique de la lignée (phase 7)
+  career.ts        carrière : apprentissage, grades, promotions, augmentation (phase 8)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
   audio.ts         ambiance sonore procédurale (Web Audio, aucun fichier)
   a11y.ts, prefs.ts  fenêtres accessibles (focus, Échap), préférences (son, texte, mouvement, contraste)
@@ -442,6 +443,38 @@ Un test au hasard accepte et accomplit des requêtes sans erreur ni fuite.
 
 Format de sauvegarde v8 ; les sauvegardes v1 à v7 sont migrées automatiquement (testé).
 
+## Phase 8 — la carrière
+
+**Le constat.** On ne pouvait pas évoluer dans un métier : les ateliers exigeaient une expérience qu'on ne
+pouvait acquérir qu'en y travaillant (artisanat 8 au départ, 12 exigés au fournil, 22 à la forge), le salaire
+ne gagnait qu'un ou deux deniers entre un débutant et un expert, et aucun grade ne marquait la progression.
+
+**L'apprentissage** (`career.ts`). Tout atelier tenu par un maître prend un apprenti sans expérience, et sans
+le connaître (sauf voleur notoire ou ennemi) : gages réduits de moitié, mais on y apprend 1,5 à 1,8 fois plus
+vite. Une place d'apprenti par atelier, en plus du personnel.
+
+**Quatre grades.** Apprenti → compagnon (compétence du métier atteinte) → maître (compétence 45 et quatre
+semaines satisfaisantes) → contremaître (compétence 65, dix semaines, gestion 12). La promotion est décidée à
+la revue du lundi et annoncée ; les gages suivent, à peu près 3 → 4 → 6 → 9 d de l'heure dans un atelier
+ordinaire. Un grade ne redescend pas, et un maître le reste chez un nouveau patron.
+
+**Ce que chaque grade change.**
+- Compagnon ou plus : on apprend 1,3 fois plus vite auprès d'un patron qui en sait davantage, et l'on peut
+  **demander une augmentation** (en personne, une fois par mois ; les chances dépendent de la confiance du
+  patron, de l'ancienneté, de la diplomatie et de la santé de la caisse ; un refus froisse un peu).
+- Maître : on seconde le patron et l'on apprend la gestion ; fonder son propre atelier coûte un quart de
+  moins ; le patron ne vous renvoie plus parce que « les réserves débordent ».
+- Contremaître : prime hebdomadaire sur les bénéfices, et **reprise de l'affaire** si le patron meurt sans
+  héritier.
+- L'apprenti, peu coûteux, n'est renvoyé que si la caisse est vraiment vide.
+
+L'onglet Affaires affiche l'échelle des grades, la barre de progression de la compétence, la vitesse
+d'apprentissage et ce qu'il manque pour le grade suivant.
+
+Mesuré sur des carrières simulées (fournil et forge) : apprenti deux à trois semaines, maître vers la
+semaine 12, contremaître vers la semaine 27 (une année compte 16 semaines). Les simulations de 16 ans restent
+identiques (aucun mort de faim, bilans exacts).
+
 ## État réel du développement
 
 ### Implémenté et testé
@@ -489,6 +522,9 @@ les dialogues (le moteur restera l’autorité sur les faits).
   être attaqués par les brigands.
 - Le son est volontairement simple (synthèse) ; la vérification mesure qu'un signal est produit, pas sa
   qualité à l'oreille.
+- Carrière : seul le joueur a des grades (les PNJ gardent un salaire unique par atelier). Un joueur qui
+  thésaurise sans rien dépenser finit par assécher les caisses des ateliers, qui ne peuvent plus le payer :
+  c'est la conséquence de l'économie fermée, visible surtout au pilote automatique.
 - Un chômage résiduel de 4 à 11 % subsiste : des jeunes entre deux places, des ateliers publics limités par
   ce que la maison seigneuriale peut financer.
 - L'hospice et l'aumône entre localités garantissent la survie sans enquête de mérite : un tricheur ou un

@@ -21,7 +21,8 @@ export function goals(state: GameState): Goal[] {
   return [
     { label: 'Gagner ses premiers deniers', done: p.money >= 20 || !!p.employerId, hint: 'Va à la ferme ou au bois : un patron qui manque de bras paie à l’heure (onglet du lieu, « Travailler »).' },
     { label: 'Avoir deux repas d’avance', done: food >= 2, hint: 'Achète du pain à la boulangerie ou du grain à la ferme, et garde-en dans ta besace.' },
-    { label: 'Trouver un emploi stable', done: !!p.employerId, hint: 'Demande un contrat à un patron qui embauche : salaire chaque semaine et meilleure réputation.' },
+    { label: 'Trouver un emploi stable', done: !!p.employerId, hint: 'Entre en apprentissage dans un atelier (boulangerie, forge, auberge) : aucune expérience exigée. Ou demande une place là où l’on te connaît.' },
+    { label: 'Devenir maître de son métier', done: Object.values(p.gradeHeld ?? {}).some(g => g === 'maitre' || g === 'contremaitre'), hint: 'Apprenti, compagnon, maître, contremaître : l’onglet Affaires montre ce qu’il te manque pour le grade suivant.' },
     { label: 'Tenir une promesse', done: (state.quests ?? []).some(q => q.status === 'reussie'), hint: 'Onglet Requêtes (touche 9) : des habitants ont besoin de toi. Accepte une requête dans leur dialogue, puis tiens parole.' },
     { label: 'Se faire un ami', done: friend, hint: 'Bavarde, complimente, offre du pain. Les amis te prêtent, te nourrissent et colportent du bien de toi.' },
     { label: 'Dormir sous son propre toit', done: roof, hint: 'Loue une chambre (Maisons du village) : on y dort mieux et le coffre protège tes biens.' },

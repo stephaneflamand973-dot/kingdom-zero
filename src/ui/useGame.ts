@@ -7,11 +7,11 @@ export interface Feed { id: number; time: number; text: string; ok: boolean }
 export type ToastTone = 'good' | 'bad' | 'info' | 'major';
 export interface Toast { id: number; text: string; tone: ToastTone; title: string }
 
-const GOOD = new Set(['gift', 'help', 'wedding', 'birth', 'title', 'loan_repaid', 'work_praise', 'order_done', 'friendship', 'peace', 'coming_of_age', 'inheritance']);
+const GOOD = new Set(['promotion', 'gift', 'help', 'wedding', 'birth', 'title', 'loan_repaid', 'work_praise', 'order_done', 'friendship', 'peace', 'coming_of_age', 'inheritance']);
 const BAD = new Set(['theft', 'death', 'sickness', 'insult', 'ambush', 'eviction', 'seizure', 'default', 'fire', 'arrest', 'jail', 'revolt', 'war', 'slander', 'rivalry', 'starving', 'bounty', 'racket', 'argument', 'order_failed']);
 const TITLES: Record<string, string> = {
   incident: 'Aléa', approach: 'On t’aborde', death: 'Décès', birth: 'Naissance', wedding: 'Noces', war: 'Guerre', revolt: 'Révolte',
-  order_done: 'Parole tenue', order_failed: 'Parole non tenue', sickness: 'Maladie', theft: 'Vol', ambush: 'Embuscade', festival: 'Fête', title: 'Titre', fire: 'Renvoi', inheritance: 'Héritage',
+  promotion: 'Promotion', order_done: 'Parole tenue', order_failed: 'Parole non tenue', sickness: 'Maladie', theft: 'Vol', ambush: 'Embuscade', festival: 'Fête', title: 'Titre', fire: 'Renvoi', inheritance: 'Héritage',
 };
 
 /** Faits nouveaux qui concernent le joueur (acteur, cible ou témoin), du plus récent au plus ancien. */

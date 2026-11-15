@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // Entreprises (phase 3) : rachat et gestion par le joueur, fondation de nouveaux établissements.
 // ─────────────────────────────────────────────────────────────
-import { PROFESSION_BY_BUSINESS } from './data';
+import { PROFESSION_BY_BUSINESS, WORK_SKILL } from './data';
 import { askPrice, P, transferMoney } from './economy';
 import { logEvent } from './events';
 import { businessValue, transferBusiness } from './finance';
@@ -118,9 +118,16 @@ const TEMPLATE: Partial<Record<BusinessKind, Pick<Business, 'sells' | 'buys' | '
   forge: { sells: ['tools'], buys: ['iron', 'wood'], targets: { tools: 4, iron: 6, wood: 4 }, openFrom: 7, openTo: 18, maxWorkers: 1, wage: 5 },
 };
 
+/** Coût des travaux : un maître du métier (compétence 45) bâtit son atelier un quart moins cher. */
+export function foundingCost(founder: Character, kind: BusinessKind): number | undefined {
+  const base = FOUNDING_COST[kind];
+  if (!base) return undefined;
+  return founder.skills[WORK_SKILL[kind]] >= 45 ? Math.round(base * 0.75) : base;
+}
+
 /** Fonde un établissement : le coût de construction va à l'intendance, le capital à la caisse. */
 export function foundBusiness(state: GameState, founder: Character, kind: BusinessKind, settlementId: string, capital: number): Business | undefined {
-  const cost = FOUNDING_COST[kind];
+  const cost = foundingCost(founder, kind);
   const tpl = TEMPLATE[kind];
   if (!cost || !tpl || founder.money < cost + capital) return undefined;
   const st = state.settlements[settlementId];
@@ -154,7 +161,7 @@ export function foundAsPlayer(state: GameState, kind: BusinessKind, capital: num
   const loc = state.locations[p.locationId];
   if (loc.kind !== 'square') return no('On achète un terrain à bâtir auprès de l’intendance, depuis la place.');
   if (!FOUNDABLE.includes(kind)) return no('Ce genre d’établissement ne se fonde pas ainsi.');
-  const cost = FOUNDING_COST[kind]!;
+  const cost = foundingCost(p, kind)!;
   if (p.money < cost + capital) return no(`Il te faut ${cost} d de travaux et ${capital} d de fonds de roulement (${cost + capital} d).`);
   const b = foundBusiness(state, p, kind, loc.settlementId, capital);
   if (!b) return no('La fondation a échoué.');

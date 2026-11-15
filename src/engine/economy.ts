@@ -349,7 +349,13 @@ export function manageBusiness(state: GameState, b: Business, procurementOnly = 
     if (hireBest(state, b)) b.lastStaffChangeDay = day;
   } else if (b.employees.length > 0 && (cannotPay || (overproducing && b.treasury < reserve * 1.2 && settled))) {
     const candidates = b.employees.map(id => state.characters[id]).filter(e => !(isManor && e.profession !== 'journalier'));
-    const fired = candidates[candidates.length - 1];
+    // phase 8 : l'apprenti (peu coûteux) n'est renvoyé que si la caisse est vraiment vide,
+    // et l'ancienneté protège : maîtres et contremaîtres partent en dernier
+    const gradeIn = (e: Character) => state.contracts.find(k => k.status === 'active' && k.workerId === e.id && k.businessId === b.id)?.grade;
+    const rankOf = (e: Character) => { const g = gradeIn(e); return g === 'contremaitre' ? 3 : g === 'maitre' ? 2 : 0; };
+    // (on ne renvoie pas un maître parce que les réserves sont pleines : seulement si l'on ne peut plus payer)
+    const pool = candidates.filter(e => (gradeIn(e) !== 'apprenti' || b.treasury < 15) && (cannotPay || rankOf(e) < 2));
+    const fired = pool.map((e, i) => ({ e, i })).sort((x, y) => rankOf(x.e) - rankOf(y.e) || y.i - x.i)[0]?.e;
     if (fired) {
       fireEmployee(state, b, fired, cannotPay ? 'la caisse ne permet plus de payer' : 'les réserves débordent, le travail manque');
       b.lastStaffChangeDay = day;
