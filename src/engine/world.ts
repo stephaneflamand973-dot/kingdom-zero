@@ -1,6 +1,7 @@
 // Génération du monde initial : la région de Valcendre (phase 3 : trois localités reliées par des routes).
 // La composition est fixe (pour des tests stables) ; les détails varient avec la graine.
-import type { AttrId, Business, BusinessKind, Character, GameState, Inventory, ItemId, Location, OrgRole, Organization, ProfessionId, Property, Settlement, SkillId, TraitId } from './types';
+import { applyStartingPerks } from './perks';
+import type { AttrId, Business, BusinessKind, Character, GameState, Inventory, ItemId, Location, OrgRole, Organization, PlayerSetup, ProfessionId, Property, Settlement, SkillId, TraitId } from './types';
 import { randInt } from './rng';
 import { absoluteHour, recordPrices } from './sim';
 import { modifyRelation } from './social';
@@ -83,7 +84,7 @@ export function emptyState(seed: number): GameState {
   };
 }
 
-export function createWorld(seed: number): GameState {
+export function createWorld(seed: number, setup?: PlayerSetup): GameState {
   const state = emptyState(seed);
   state.settlements.valcendre = valcendreSettlement(55, 0.05);
   state.settlementOrder.push('valcendre');
@@ -103,6 +104,17 @@ export function createWorld(seed: number): GameState {
     ambition: { kind: 'vie_paisible', since: 0 },
     birthDay: birthDayFor('player', 24), parentIds: [], childIds: [],
   };
+  // Création du personnage (phase 9) : nom, sexe, âge et atouts choisis par le joueur
+  if (setup) {
+    const clean = (t: string, d: string) => (t ?? '').trim().replace(/\s+/g, ' ').slice(0, 24) || d;
+    player.firstName = clean(setup.firstName, player.firstName);
+    player.lastName = clean(setup.lastName, player.lastName);
+    player.sex = setup.sex === 'F' ? 'F' : 'M';
+    player.age = Math.max(16, Math.min(45, Math.round(setup.age || 24)));
+    player.birthDay = birthDayFor('player', player.age);
+    applyStartingPerks(player, setup.perks ?? []);
+    state.dynasty.name = player.lastName;
+  }
   state.characters.player = player;
   state.characterOrder.push('player');
 

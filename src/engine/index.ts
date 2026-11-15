@@ -30,3 +30,4 @@ export * from './incidents';
 export * from './approaches';
 export * from './quests';
 export * from './career';
+export * from './perks';

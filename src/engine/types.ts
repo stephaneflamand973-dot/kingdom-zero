@@ -100,6 +100,7 @@ export interface Character {
   /** Plus haut grade obtenu par métier (phase 8) : un maître le reste chez un nouveau patron. */
   gradeHeld?: Partial<Record<SkillId, 'apprenti' | 'compagnon' | 'maitre' | 'contremaitre'>>;
   traits: TraitId[];
+  perks?: PerkId[];        // atouts de départ du joueur (phase 9)
   goal: Goal;
   relations: Record<string, Relation>;
   knownEvents: string[];    // ids d'événements que ce personnage connaît (croyances)
@@ -222,6 +223,8 @@ export interface Loan {
 }
 
 /** Contrat de travail du joueur auprès d'un établissement. */
+export type PerkId = 'esprit_vif' | 'robuste' | 'beau_parleur' | 'bras_solides' | 'main_verte' | 'fils_d_artisan' | 'pecule' | 'bonne_etoile';
+export interface PlayerSetup { firstName: string; lastName: string; sex: 'M' | 'F'; age: number; perks: PerkId[] }
 export type Grade = 'apprenti' | 'compagnon' | 'maitre' | 'contremaitre';
 export interface JobContract {
   id: string;
@@ -427,7 +430,7 @@ export interface GameState {
   wanted: Wanted[];
   encounter?: Encounter;
   /** Lignée du joueur (phase 5) : chaque personnage incarné à tour de rôle. */
-  dynasty: { name: string; generation: number; heads: { id: string; from: number; to?: number }[] };
+  dynasty: { name: string; generation: number; heads: { id: string; from: number; to?: number }[]; designatedHeir?: string; lastTryDay?: number };
   /** Le personnage joueur vient de mourir : choix du successeur en attente. */
   pendingSuccession?: { deceasedId: string; candidates: string[]; cause: string };
   /** Pilote automatique : l'IA conduit le joueur jusqu'à cette minute. */

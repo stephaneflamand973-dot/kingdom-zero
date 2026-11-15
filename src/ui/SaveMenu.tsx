@@ -7,7 +7,7 @@ const SLOTS = ['auto', 'slot1', 'slot2', 'slot3'];
 const SLOT_NAME: Record<string, string> = { auto: 'Sauvegarde automatique', slot1: 'Emplacement I', slot2: 'Emplacement II', slot3: 'Emplacement III' };
 
 export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { state, store, replace, newGame } = game;
+  const { state, store, replace, setCreating } = game;
   const [msg, setMsg] = useState<string | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
   const [exported, setExported] = useState<string | null>(null);
@@ -67,7 +67,7 @@ export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void })
           <input ref={file} type="file" accept="application/json,.json" hidden onChange={e => e.target.files?.[0] && doImport(e.target.files[0])} />
           {!confirmNew
             ? <button className="btn danger" onClick={() => setConfirmNew(true)}>Nouvelle partie</button>
-            : <button className="btn danger" onClick={() => { newGame(); onClose(); }}>Confirmer : effacer la partie en cours</button>}
+            : <button className="btn danger" onClick={() => { setCreating(true); onClose(); }}>Confirmer : créer un nouveau personnage</button>}
         </div>
         {confirmNew && <p className="muted small">La partie en cours non sauvegardée sera perdue. <button className="link" onClick={() => setConfirmNew(false)}>Annuler</button></p>}
         {exported && <textarea id="export-save" className="export-box" readOnly value={exported} onFocus={e => e.currentTarget.select()} />}

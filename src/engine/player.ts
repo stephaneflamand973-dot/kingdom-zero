@@ -231,9 +231,13 @@ export function sleepOptions(state: GameState): { mode: SleepMode; label: string
   const loc = state.locations[p.locationId];
   const out: { mode: SleepMode; label: string; ok: boolean; reason?: string }[] = [];
   const home = propertiesAt(state, loc.id).find(pr => hasAccess(pr, p));
+  // le foyer : là où l'on vit (celui du conjoint après les noces), même sans bail à son nom
+  const spouse = p.spouseId ? state.characters[p.spouseId] : undefined;
+  const household = !home && loc.kind !== 'square' && loc.kind !== 'road' && (loc.id === p.homeId || (!!spouse?.alive && loc.id === spouse.homeId));
   if (home) out.push({ mode: 'home', label: `Dormir chez toi (${home.name})`, ok: true });
+  else if (household) out.push({ mode: 'home', label: `Dormir au foyer${spouse?.alive ? ` avec ${spouse.firstName}` : ''}`, ok: true });
   const inn = loc.kind === 'tavern' ? businessesAt(state, loc.id).find(b => b.kind === 'tavern') : undefined;
-  if (inn && !home) {
+  if (inn && !home && !household) {
     const refuse = tradeRefusal(state, inn, p);
     out.push({ mode: 'inn', label: `Louer un lit (${INN_BED_PRICE} d)`, ok: !refuse && p.money >= INN_BED_PRICE,
       reason: refuse ? refusalText(state, state.characters[inn.ownerId!], 'te louer un lit') : p.money < INN_BED_PRICE ? 'Pas assez d’argent.' : undefined });
@@ -267,7 +271,7 @@ export function sleep(state: GameState, mode: SleepMode): ActionResult {
   p.activity = { kind: 'sleep', locationId: p.locationId, since: state.time, quality, note: 'Dort' };
   const e0 = p.needs.energy;
   finish(state, p, minutes);
-  const where = mode === 'home' ? 'chez toi' : mode === 'inn' ? 'dans un lit de l’auberge' : mode === 'barn' ? 'dans la paille de la grange' : 'à même le sol';
+  const where = mode === 'home' ? (propertiesAt(state, p.locationId).some(pr => hasAccess(pr, p)) ? 'chez toi' : 'au foyer') : mode === 'inn' ? 'dans un lit de l’auberge' : mode === 'barn' ? 'dans la paille de la grange' : 'à même le sol';
   return ok(`Tu dors ${formatDuration(minutes)} ${where}${paid}. Énergie ${Math.round(e0)} → ${Math.round(p.needs.energy)}.`, minutes);
 }
 

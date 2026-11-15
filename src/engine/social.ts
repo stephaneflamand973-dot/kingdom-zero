@@ -17,6 +17,8 @@ export function modifyRelation(state: GameState, fromId: string, toId: string, d
   const c = state.characters[fromId];
   if (!c || fromId === toId) return NEUTRAL;
   const r = c.relations[toId] ?? (c.relations[toId] = { affinity: 0, trust: 0, lastInteraction: -1 });
+  // phase 9 : un beau parleur gagne les cœurs plus vite
+  if (dAffinity > 0 && state.characters[toId]?.perks?.includes('beau_parleur')) dAffinity *= 1.5;
   r.affinity = Math.round(clamp(r.affinity + dAffinity, -100, 100));
   r.trust = Math.round(clamp(r.trust + dTrust, -100, 100));
   r.lastInteraction = state.time;

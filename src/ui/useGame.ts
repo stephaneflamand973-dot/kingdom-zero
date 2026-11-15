@@ -1,6 +1,6 @@
 // Pont entre le moteur (mutable, sans React) et l'interface.
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { createWorld, loadFromStore, saveToStore, toDate, type ActionResult, type GameState, type KVStore, type WorldEvent } from '../engine';
+import { createWorld, loadFromStore, saveToStore, toDate, type ActionResult, type GameState, type KVStore, type PlayerSetup, type WorldEvent } from '../engine';
 import { sound } from './audio';
 
 export interface Feed { id: number; time: number; text: string; ok: boolean }
@@ -34,16 +34,17 @@ const store: KVStore | null = (() => {
   try { const t = '__kz_test__'; localStorage.setItem(t, '1'); localStorage.removeItem(t); return localStorage; } catch { return null; }
 })();
 
-function initialState(): GameState {
-  if (store) {
-    const auto = loadFromStore(store, 'auto');
-    if (auto.state) return auto.state;
-  }
-  return createWorld(Math.floor(Math.random() * 1e9));
+function savedState(): GameState | undefined {
+  if (!store) return undefined;
+  const auto = loadFromStore(store, 'auto');
+  return auto.state ?? undefined;
 }
 
 export function useGame() {
-  const ref = useRef<GameState>(initialState());
+  // sans partie sauvegardée, le monde attend la création du personnage
+  const saved = useRef(savedState());
+  const ref = useRef<GameState>(saved.current ?? createWorld(Math.floor(Math.random() * 1e9)));
+  const [creating, setCreating] = useState(!saved.current);
   const [version, setVersion] = useState(0);
   const [feed, setFeed] = useState<Feed[]>([]);
   const seq = useRef(0);
@@ -103,14 +104,17 @@ export function useGame() {
     setVersion(v => v + 1);
   }, [push]);
 
-  const newGame = useCallback(() => {
-    const s = createWorld(Math.floor(Math.random() * 1e9));
-    replace(s, `Une nouvelle vie commence à Valcendre (graine ${s.seed}).`);
+  const newGame = useCallback((setup?: PlayerSetup, seed?: number) => {
+    const s = createWorld(seed ?? Math.floor(Math.random() * 1e9), setup);
+    const p = s.characters[s.playerId];
+    replace(s, `Une nouvelle vie commence à Valcendre pour ${p.firstName} ${p.lastName} (graine ${s.seed}).`);
+    setCreating(false);
+    if (store) { try { saveToStore(store, 'auto', s); } catch { /* stockage plein */ } }
   }, [replace]);
 
-  return useMemo(() => ({ state: ref.current, version, act, feed, push, replace, newGame, store, toasts, dismiss }),
+  return useMemo(() => ({ state: ref.current, version, act, feed, push, replace, newGame, store, toasts, dismiss, creating, setCreating }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [version, feed, toasts]);
+    [version, feed, toasts, creating]);
 }
 
 export type Game = ReturnType<typeof useGame>;

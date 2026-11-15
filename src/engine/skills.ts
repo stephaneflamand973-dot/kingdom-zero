@@ -7,7 +7,7 @@ export function xpForNextLevel(level: number): number { return 6 + level * 0.6; 
 
 export function gainXp(state: GameState, c: Character, skill: SkillId, amount: number): number {
   if (c.skills[skill] >= 100) return 0;
-  const learn = amount * (0.6 + c.attributes.intelligence * 0.08);
+  const learn = amount * (0.6 + c.attributes.intelligence * 0.08) * (c.perks?.includes('esprit_vif') ? 2 : 1);
   c.skillXp[skill] = (c.skillXp[skill] ?? 0) + learn;
   let gained = 0;
   while ((c.skillXp[skill] ?? 0) >= xpForNextLevel(c.skills[skill]) && c.skills[skill] < 100) {

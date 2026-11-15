@@ -14,7 +14,7 @@ import { canWork, dayWageOffer, finish, guard, work } from './player';
 import { chance, rand } from './rng';
 import { advanceTime, killCharacter, recordPrices } from './sim';
 import { compatibility, getRelation, modifyRelation } from './social';
-import { kin, wed } from './family';
+import { kin, PREGNANCY_DAYS, wed } from './family';
 import { MIN_PER_DAY, formatDuration } from './time';
 import type { ActionResult, Character, GameState, Organization } from './types';
 import { activeContract, jobOffer, signContract } from './contracts';
@@ -36,7 +36,7 @@ export function rollTravelAmbush(state: GameState, from: string, to: string, min
   const p = player(state);
   let elapsed = 0;
   for (const road of path.roads) {
-    const risk = ambushRisk(state, road);
+    const risk = ambushRisk(state, road) * (p.perks?.includes('bonne_etoile') ? 0.5 : 1);
     const pAmbush = 1 - Math.pow(1 - risk, road.hours);
     if (risk > 0 && rand(state) < pAmbush) {
       const gang = gangsOnRoad(state, road).find(g => freeMembers(state, g).length >= 2)!;
@@ -506,4 +506,56 @@ export function liveDays(state: GameState, days: number): ActionResult {
   const mine = state.events.filter(e => Number(e.id.slice(1)) > seq0 && e.importance >= 2 && (e.actorId === p.id || e.targetId === p.id || p.knownEvents.includes(e.id)));
   const why = state.encounter ? ' Un imprévu interrompt le cours des jours.' : state.pendingSuccession ? ' La mort t’a surpris.' : '';
   return ok(`${formatDuration(elapsed)} passent au fil des jours. Bourse : ${money0} → ${p.money} d.${mine.length ? ` Faits marquants : ${mine.slice(-4).map(e => e.text).join(' ')}` : ''}${why}`, elapsed);
+}
+
+// ── Phase 9 : enfants et testament ──────────────────────────
+
+/** Le joueur et son conjoint essaient d'avoir un enfant (le soir, ensemble, au foyer). */
+export function tryForChild(state: GameState): ActionResult {
+  const g = guard(state); if (g) return g;
+  const p = player(state);
+  const spouse = p.spouseId ? state.characters[p.spouseId] : undefined;
+  if (!spouse?.alive) return { ok: false, message: 'Il faut d’abord être marié.', minutes: 0 };
+  if (spouse.sex === p.sex) return { ok: false, message: 'Votre foyer peut accueillir un enfant en recueillant un orphelin, pas en le concevant.', minutes: 0 };
+  if (spouse.locationId !== p.locationId) return { ok: false, message: `${spouse.firstName} n’est pas là : retrouvez-vous au foyer.`, minutes: 0 };
+  const d = toDate(state.time);
+  if (d.hour >= 6 && d.hour < 19) return { ok: false, message: 'Attendez le soir, au calme du foyer.', minutes: 0 };
+  const mother = p.sex === 'F' ? p : spouse;
+  const father = p.sex === 'F' ? spouse : p;
+  if (mother.pregnantUntil !== undefined) return { ok: false, message: `${mother.isPlayer ? 'Tu attends' : `${mother.firstName} attend`} déjà un enfant.`, minutes: 0 };
+  if (mother.age > 42) return { ok: false, message: `${mother.isPlayer ? 'Tu as' : `${mother.firstName} a`} passé l’âge d’enfanter.`, minutes: 0 };
+  if (mother.needs.hunger > 60) return { ok: false, message: 'Le ventre creux, on ne songe pas à fonder une famille : mangez d’abord.', minutes: 0 };
+  if (state.dynasty.lastTryDay === d.day) return { ok: false, message: 'Laissez faire la nature : réessayez un autre soir.', minutes: 0 };
+  state.dynasty.lastTryDay = d.day;
+  modifyRelation(state, spouse.id, p.id, 3, 1);
+  modifyRelation(state, p.id, spouse.id, 3, 1);
+  p.needs.social = clamp(p.needs.social + 20, 0, 100);
+  finish(state, p, 60);
+  if (chance(state, 0.3)) {
+    mother.pregnantUntil = d.day + PREGNANCY_DAYS;
+    mother.pregnancyFather = father.id;
+    logEvent(state, { type: 'pregnancy', actorId: mother.id, targetId: father.id, importance: 3,
+      text: `${fullName(mother)} attend un enfant de ${fullName(father)}.`, witnesses: [mother.id, father.id] });
+    return { ok: true, message: `Bonne nouvelle : ${mother.isPlayer ? 'tu attends' : `${mother.firstName} attend`} un enfant ! Naissance prévue dans ${PREGNANCY_DAYS} jours (${Math.round(PREGNANCY_DAYS / 28 * 10) / 10} saisons).`, minutes: 60 };
+  }
+  return { ok: true, message: 'Une soirée tendre au foyer. Pas d’enfant en route pour l’instant : réessayez un autre soir.', minutes: 60 };
+}
+
+/** Qui peut être désigné héritier par testament : la famille, ou un ami proche. */
+export function heirOptions(state: GameState): Character[] {
+  const p = player(state);
+  return Object.values(state.characters).filter(c => c.alive && !c.isPlayer && c.id !== p.id
+    && (kin(state, p, c) || c.id === p.spouseId || (c.relations[p.id]?.affinity ?? 0) >= 30));
+}
+
+/** Testament : désigne l'héritier principal (biens, affaires) et le premier successeur proposé à ta mort. */
+export function designateHeir(state: GameState, id: string | undefined): ActionResult {
+  const g = guard(state); if (g) return g;
+  if (!id) { state.dynasty.designatedHeir = undefined; return { ok: true, message: 'Tu révoques ton testament : la coutume désignera ton héritier.', minutes: 0 }; }
+  const c = state.characters[id];
+  if (!c || !heirOptions(state).some(x => x.id === id)) return { ok: false, message: 'On ne lègue ses biens qu’à sa famille ou à un ami proche.', minutes: 0 };
+  state.dynasty.designatedHeir = id;
+  logEvent(state, { type: 'estate', actorId: state.playerId, targetId: id, importance: 2, text: `${fullName(player(state))} rédige son testament en faveur de ${fullName(c)}.`, witnesses: [id] });
+  finish(state, player(state), 30);
+  return { ok: true, message: `Testament rédigé : ${fullName(c)} sera ton héritier principal et le premier à pouvoir reprendre ta lignée${c.age < 14 ? ' (une fois majeur)' : ''}.`, minutes: 30 };
 }

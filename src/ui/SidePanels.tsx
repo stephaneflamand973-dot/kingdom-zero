@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  designateHeir, heirOptions, tryForChild, PERKS,
   acceptedQuests, openOffers, quests, QUEST_NAMES, socialRank, askRaise, careerStatus, GRADES, GRADE_NAMES, raiseChance,
   activeIncidents, INCIDENT_EFFECTS, INCIDENT_NAMES, toDate, residents, businessesIn, settlementIdOf, aliveCharacters, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
   activeContract, activeLoans, ambitionLabel, quitJob, repayLoan, reputationTags, orgList, landsOf, soldiersOf,
@@ -28,7 +29,7 @@ export function SidePanels({ game, onTalk, tab, onTab }: { game: Game; onTalk: (
       </nav>
       <div className="tab-body">
         {tab === 'perso' && <Perso state={state} />}
-        {tab === 'famille' && <Famille state={state} onTalk={onTalk} />}
+        {tab === 'famille' && <Famille game={game} onTalk={onTalk} />}
         {tab === 'inv' && <Inv state={state} />}
         {tab === 'affaires' && <Affaires game={game} />}
         {tab === 'rel' && <Rel state={state} onTalk={onTalk} />}
@@ -53,7 +54,8 @@ function Perso({ state }: { state: GameState }) {
   return (
     <div className="perso">
       <div className="perso-head">
-        <div><h3>{fullName(p)}</h3><div className="muted">{p.age} ans · {PROFESSION_NAMES[p.profession]} · {moodOf(p)}</div></div>
+        <div><h3>{fullName(p)}</h3><div className="muted">{p.age} ans · {PROFESSION_NAMES[p.profession]} · {moodOf(p)}</div>
+          {(p.perks ?? []).length > 0 && <div className="traits">{p.perks!.map(id => { const d = PERKS.find(x => x.id === id); return <span key={id} className="trait" title={d?.description}>{d?.name}</span>; })}</div>}</div>
         <div className="rep"><div className="tb-sub">Réputation</div><strong>{reputationLabel(rep.score, rep.known)}</strong><div className="muted small">{rep.known} personne{rep.known > 1 ? 's' : ''} te connaissent</div></div>
       </div>
       <p className="goal">🎯 {GOALS[p.goal.kind]}{p.title ? ` · ${p.title === 'ecuyer' ? 'Écuyer' : 'Conseiller'}` : ''}</p>
@@ -372,8 +374,14 @@ function Pouvoir({ state }: { state: GameState }) {
   );
 }
 
-function Famille({ state, onTalk }: { state: GameState; onTalk: (id: string) => void }) {
+function Famille({ game, onTalk }: { game: Game; onTalk: (id: string) => void }) {
+  const { state, act } = game;
   const p = state.characters[state.playerId];
+  const spouseC = p.spouseId ? state.characters[p.spouseId] : undefined;
+  const expecting = p.pregnantUntil !== undefined ? p : spouseC?.pregnantUntil !== undefined ? spouseC : undefined;
+  const today = toDate(state.time).day;
+  const options = heirOptions(state);
+  const willed = state.dynasty.designatedHeir ? state.characters[state.dynasty.designatedHeir] : undefined;
   const person = (id: string, role: string) => {
     const c = state.characters[id];
     if (!c) return null;
@@ -401,7 +409,13 @@ function Famille({ state, onTalk }: { state: GameState; onTalk: (id: string) => 
   const siblingIds = [...new Set(p.parentIds.flatMap(pid => state.characters[pid]?.childIds ?? []))].filter(id => id !== p.id);
   return (
     <div className="famille">
-      <p className="goal">Lignée {state.dynasty.name} · génération {state.dynasty.generation}{p.pregnantUntil ? ' · un enfant est attendu' : ''}</p>
+      <p className="goal">Lignée {state.dynasty.name} · génération {state.dynasty.generation}{expecting ? ` · un enfant est attendu dans ${Math.max(0, expecting.pregnantUntil! - today)} jours` : ''}</p>
+      {spouseC?.alive && spouseC.sex !== p.sex && (
+        <div className="card-line">
+          <div><b>Agrandir la famille</b><div className="muted small">{expecting ? `${expecting.isPlayer ? 'Tu attends' : `${expecting.firstName} attend`} un enfant.` : 'Le soir, au foyer, avec ton conjoint présent, le ventre plein. Une chance sur trois chaque soir.'}</div></div>
+          <button className="btn sm" disabled={!!state.gameOver || !!expecting} onClick={() => act(tryForChild)}>Avoir un enfant</button>
+        </div>
+      )}
       <h4>Foyer</h4>
       <ul className="rel-list">
         {p.spouseId ? person(p.spouseId, p.sex === 'F' || state.characters[p.spouseId].sex === 'M' ? 'Conjoint' : 'Conjointe') : <li className="muted small">Tu n’es pas marié. Fais ta cour à quelqu’un qui t’apprécie (onglet de dialogue).</li>}
@@ -426,6 +440,16 @@ function Famille({ state, onTalk }: { state: GameState; onTalk: (id: string) => 
           return <li key={h.id}><span className="j-time">{formatDate(h.from).split(' ').slice(1).join(' ')}{h.to !== undefined ? ` → ${formatDate(h.to).split(' ').slice(1).join(' ')}` : ' → aujourd’hui'}</span><span>{fullName(c)}{c.alive ? '' : ` († ${c.age} ans)`}</span></li>;
         })}
       </ol>
+      <h4>Testament</h4>
+      <p className="muted small">{willed?.alive ? <>Ton héritier désigné : <b>{fullName(willed)}</b>. Il reçoit tes biens et tes affaires, et sera le premier à pouvoir reprendre ta lignée{willed.age < 14 ? ' une fois majeur' : ''}.</> : 'Aucun testament : la coutume désigne l’héritier (enfants adultes, conjoint, enfants mineurs, puis parents).'}</p>
+      {options.length > 0 && (
+        <div className="testament">
+          <select aria-label="Héritier désigné" value={willed?.alive ? willed.id : ''} onChange={e => act(s => designateHeir(s, e.target.value || undefined))} disabled={!!state.gameOver}>
+            <option value="">— selon la coutume —</option>
+            {options.map(c => <option key={c.id} value={c.id}>{fullName(c)} ({c.age} ans{c.id === p.spouseId ? ', conjoint' : p.childIds.includes(c.id) ? ', enfant' : ''})</option>)}
+          </select>
+        </div>
+      )}
       <h4>Chronique de la lignée</h4>
       {(state.chronicle ?? []).length === 0
         ? <p className="muted small">Rien encore n’est digne d’être consigné. Les grands moments de ta vie (rangs, promesses tenues ou trahies, noces, naissances, titres) s’inscriront ici.</p>

@@ -115,10 +115,23 @@ export function weeklyCourtship(state: GameState): void {
 export function wed(state: GameState, a: Character, b: Character): void {
   a.spouseId = b.id; b.spouseId = a.id;
   const [rich, poor] = a.money >= b.money ? [a, b] : [b, a];
-  // l'époux le moins aisé rejoint le foyer de l'autre (sauf si le joueur a sa propre maison)
-  const mover = poor.isPlayer && state.properties.some(pr => pr.ownerId === poor.id || pr.tenantId === poor.id) ? rich : poor;
+  // l'époux le moins aisé rejoint le foyer de l'autre ; le joueur garde le sien seulement s'il en est propriétaire
+  // (ou si le conjoint n'a pas de logement) — un simple locataire s'installe chez son conjoint
+  const pl = a.isPlayer ? a : b.isPlayer ? b : undefined;
+  const other = pl === a ? b : a;
+  const plOwns = !!pl && state.properties.some(pr => pr.ownerId === pl.id);
+  const otherHomeless = !!pl && state.locations[other.homeId]?.kind === 'square';
+  const mover = pl ? (plOwns || otherHomeless ? other : pl) : poor;
   const host = mover === rich ? poor : rich;
   mover.homeId = host.homeId;
+  // le joueur qui emménage chez son conjoint rend la chambre qu'il louait (si son coffre est vide)
+  if (mover.isPlayer) {
+    for (const pr of state.properties) {
+      if (pr.tenantId !== mover.id || Object.values(pr.storage).some(v => (v ?? 0) > 0)) continue;
+      pr.tenantId = undefined; pr.rentDueDay = undefined;
+      logEvent(state, { type: 'rent', actorId: mover.id, importance: 1, text: `${fullName(mover)} rend ${pr.name} pour s'installer au foyer de ${fullName(host)}.` });
+    }
+  }
   const sid = settlementIdOf(state, host.homeId);
   const tavern = businessesIn(state, sid).find(x => x.kind === 'tavern');
   const feast = Math.min(30, rich.money);
@@ -298,7 +311,10 @@ export function settleEstate(state: GameState, c: Character): boolean {
       logEvent(state, { type: 'adoption', actorId: guardian.id, targetId: k.id, importance: 2, text: `${fullName(guardian)} recueille ${fullName(k)}, orphelin${k.sex === 'F' ? 'e' : ''}.`, witnesses: [guardian.id, k.id] });
     }
   }
-  const heirs = heirsOf(state, c);
+  let heirs = heirsOf(state, c);
+  // testament du joueur (phase 9) : l'héritier désigné devient l'héritier principal
+  const willed = c.isPlayer && state.dynasty.designatedHeir ? state.characters[state.dynasty.designatedHeir] : undefined;
+  if (willed?.alive && willed.id !== c.id) heirs = [willed, ...heirs.filter(h => h.id !== willed.id)];
   if (!heirs.length) return false;
   const main = heirs[0];
   // 4. Partage de l'argent (le reste à l'héritier principal)
@@ -335,7 +351,9 @@ export function successionCandidates(state: GameState, dead: Character): string[
   const family = [...heirsOf(state, dead), ...siblings(state, dead)].filter(adult);
   const friends = npcs(state).filter(x => adult(x) && x.age >= 16 && (x.relations[dead.id]?.affinity ?? 0) >= 30)
     .sort((a, b) => (b.relations[dead.id]?.affinity ?? 0) - (a.relations[dead.id]?.affinity ?? 0)).slice(0, 3);
-  return [...new Set([...family, ...friends].map(x => x.id))];
+  const willed = dead.isPlayer && state.dynasty.designatedHeir ? state.characters[state.dynasty.designatedHeir] : undefined;
+  const first = adult(willed) ? [willed!] : [];
+  return [...new Set([...first, ...family, ...friends].map(x => x.id))];
 }
 
 /** Le joueur incarne désormais ce personnage ; le monde continue sans réinitialisation. */
@@ -347,6 +365,7 @@ export function continueAs(state: GameState, id: string): { ok: boolean; message
   prev.isPlayer = false;
   next.isPlayer = true;
   state.playerId = id;
+  state.dynasty.designatedHeir = undefined; // le nouveau chef de lignée rédigera son propre testament
   next.activity = { kind: 'idle', locationId: next.locationId, since: state.time, note: 'Reprend le flambeau' };
   const descendant = prev.childIds.includes(id);
   const last = state.dynasty.heads[state.dynasty.heads.length - 1];

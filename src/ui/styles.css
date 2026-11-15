@@ -452,3 +452,18 @@ kbd { font-family: var(--serif); background: var(--wood-3); border: 1px solid va
 .next-grade ul { list-style: none; margin: 4px 0; padding: 0; font-size: .9rem; }
 .next-grade li.ok { color: var(--green); }
 .career p { margin: 0; }
+
+/* ── Phase 9 : création du personnage, famille, testament ──── */
+.modal.creation { max-width: 680px; }
+.cc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 10px 0; }
+.cc-grid label { display: grid; gap: 4px; font-size: .9rem; }
+.cc-grid input[type=text], .cc-grid input:not([type]), .modal.creation details input { font: inherit; padding: 6px 8px; border: 1px solid #b59d70; border-radius: 6px; background: #fbf4e2; color: var(--ink); }
+.perk-list { list-style: none; padding: 0; margin: 6px 0 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.perk { width: 100%; text-align: left; font: inherit; display: grid; gap: 2px; padding: 8px 10px; border-radius: 8px; border: 1px solid #b59d70; background: rgba(255,255,255,.35); color: var(--ink); cursor: pointer; }
+.perk span { font-size: .82rem; color: #5a4026; }
+.perk.on { border: 2px solid var(--gold); background: #f6e7bf; box-shadow: 0 0 0 2px rgba(201,162,74,.25); }
+.perk:disabled { opacity: .45; cursor: not-allowed; }
+.testament select { width: 100%; font: inherit; padding: 6px 8px; background: var(--wood-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+@media (max-width: 640px) { .cc-grid, .perk-list { grid-template-columns: 1fr; } }
+.cc-grid .opt-group { display: flex; gap: 16px; align-items: center; }
+.cc-grid .opt-group label { display: inline-flex; flex-direction: row; gap: 6px; align-items: center; }

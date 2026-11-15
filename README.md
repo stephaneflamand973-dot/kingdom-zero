@@ -1,4 +1,4 @@
-# KINGDOM ZERO — Phase 8 (v0.8.0)
+# KINGDOM ZERO — Phase 9 (v0.9.0)
 
 Simulation de vie médiévale / RPG sandbox systémique. Le **pays de Valcendre** vit sans le joueur :
 trois localités reliées par des routes, environ 48 habitants qui travaillent, achètent, mangent, se lient
@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 127 tests automatisés (scénarios A–G, phases 2 à 8, invariants, fuzz) |
+| `npm test` | 137 tests automatisés (scénarios A–G, phases 2 à 9, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -70,6 +70,7 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
   approaches.ts    initiatives des PNJ envers le joueur (phase 6)
   quests.ts        requêtes nées de la simulation, rangs sociaux, chronique de la lignée (phase 7)
   career.ts        carrière : apprentissage, grades, promotions, augmentation (phase 8)
+  perks.ts         atouts de départ choisis à la création du personnage (phase 9)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
   audio.ts         ambiance sonore procédurale (Web Audio, aucun fichier)
   a11y.ts, prefs.ts  fenêtres accessibles (focus, Échap), préférences (son, texte, mouvement, contraste)
@@ -475,6 +476,33 @@ Mesuré sur des carrières simulées (fournil et forge) : apprenti deux à trois
 semaine 12, contremaître vers la semaine 27 (une année compte 16 semaines). Les simulations de 16 ans restent
 identiques (aucun mort de faim, bilans exacts).
 
+## Phase 9 — ton personnage, ton foyer, ta lignée
+
+**Création du personnage.** Au premier lancement (et à chaque « Nouvelle partie »), on choisit prénom, nom,
+sexe, âge (16 à 40 ans) et **deux atouts** parmi huit, chacun avec un effet réel dans le moteur :
+- **Esprit vif** : apprend tous les savoir-faire deux fois plus vite ;
+- **Robuste** : endurance +2, faim 20 % moins rapide, deux fois moins de maladies ;
+- **Beau parleur** : charisme +2, diplomatie +10, les gens s'attachent 50 % plus vite ;
+- **Bras solides** : force +3, combat +12 ;
+- **Main verte** : agriculture +15 ;
+- **Fils d'artisan** : artisanat +12 (compagnon d'emblée dans la plupart des ateliers) ;
+- **Petit pécule** : 60 deniers au départ ;
+- **Né sous une bonne étoile** : deux fois moins d'embuscades.
+Une graine facultative permet de rejouer le même monde. Les atouts apparaissent dans l'onglet Personnage.
+
+**Bogue corrigé : le foyer du conjoint.** Un joueur locataire qui épousait l'aubergiste faisait emménager sa
+femme dans sa chambre louée ; quand le bail cessait, il devait de nouveau payer un lit. Désormais un joueur
+simplement locataire s'installe chez son conjoint (sa chambre est rendue si le coffre est vide), et l'on peut
+toujours **dormir gratuitement au foyer** — celui du conjoint compris. Les parties déjà touchées sont réparées.
+
+**Avoir des enfants.** Marié, le soir, au foyer avec son conjoint présent et le ventre plein : « Avoir un
+enfant » (onglet Famille), une chance sur trois chaque soir, au plus une fois par jour. La grossesse dure
+70 jours ; l'enfant porte le nom de la lignée et apparaît dans la famille. Une joueuse porte l'enfant elle-même.
+
+**Testament.** Dans l'onglet Famille, on désigne son héritier parmi sa famille ou ses amis proches : il reçoit
+biens, maisons et affaires, et il est le premier proposé pour reprendre la lignée. Le testament s'efface à la
+succession : le nouveau chef de lignée rédige le sien.
+
 ## État réel du développement
 
 ### Implémenté et testé
@@ -522,6 +550,7 @@ les dialogues (le moteur restera l’autorité sur les faits).
   être attaqués par les brigands.
 - Le son est volontairement simple (synthèse) ; la vérification mesure qu'un signal est produit, pas sa
   qualité à l'oreille.
+- Pas encore d'armes ni d'armures (prévu) ; le joueur ne peut pas encore rejoindre la bande ni lever des troupes.
 - Carrière : seul le joueur a des grades (les PNJ gardent un salaire unique par atelier). Un joueur qui
   thésaurise sans rien dépenser finit par assécher les caisses des ateliers, qui ne peuvent plus le payer :
   c'est la conséquence de l'économie fermée, visible surtout au pilote automatique.

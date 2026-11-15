@@ -4,6 +4,7 @@ import { ActionPanel, nextStop } from './ActionPanel';
 import { sound } from './audio';
 import { ErrorBoundary } from './ErrorBoundary';
 import { HelpModal } from './HelpModal';
+import { CharacterCreation } from './CharacterCreation';
 import { LocationPanel } from './LocationPanel';
 import { NpcDialog } from './NpcDialog';
 import { EncounterModal } from './EncounterModal';
@@ -35,7 +36,7 @@ function Game() {
   const p = state.characters[state.playerId];
   const d = toDate(state.time);
   const blocked = !!state.encounter || !!state.pendingSuccession || !!state.gameOver;
-  const modalOpen = menu || help || !!talkTo || blocked;
+  const modalOpen = menu || help || !!talkTo || blocked || game.creating;
 
   // Ambiance sonore : suit l'heure, la saison, le lieu et la météo
   const locKind = state.locations[p.locationId]?.kind ?? 'square';
@@ -102,7 +103,8 @@ function Game() {
       {talkTo && !state.encounter && <NpcDialog game={game} npcId={talkTo} onClose={() => setTalkTo(null)} />}
       {help && <HelpModal state={state} prefsApi={prefsApi} onClose={() => setHelp(false)} />}
       {menu && <SaveMenu game={game} onClose={() => setMenu(false)} />}
-      {state.gameOver && !menu && <GameOver text={state.gameOver} onMenu={() => setMenu(true)} />}
+      {state.gameOver && !menu && !game.creating && <GameOver text={state.gameOver} onMenu={() => setMenu(true)} />}
+      {game.creating && <CharacterCreation game={game} canCancel={!!game.store?.getItem('kingdom-zero:save:auto')} />}
     </div>
   );
 }

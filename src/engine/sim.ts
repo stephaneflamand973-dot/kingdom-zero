@@ -62,7 +62,7 @@ export function applyHourlyNeeds(state: GameState, c: Character): void {
   const a = c.activity;
   const n = c.needs;
   const sleeping = a.kind === 'sleep' || a.kind === 'jailed';
-  const childFactor = c.age < 14 ? 0.7 : 1; // un enfant mange moins
+  const childFactor = (c.age < 14 ? 0.7 : 1) * (c.perks?.includes('robuste') ? 0.8 : 1); // un enfant mange moins
   n.hunger = clamp(n.hunger + (sleeping ? HUNGER_PER_HOUR * 0.6 : HUNGER_PER_HOUR) * childFactor, 0, 100);
   if (sleeping) {
     const q = a.quality ?? 1;
@@ -292,6 +292,7 @@ export function dayTick(state: GameState): void {
     let p = 0.006 + (hereSettlement(state, c).infrastructure < 40 ? 0.008 : 0) + (c.needs.hunger > 70 ? 0.01 : 0) + (c.age > 55 ? 0.006 : 0);
     if (d.season === 3) p *= 1.6;
     p *= epidemicFactor(state, hereSettlement(state, c).id);
+    if (c.perks?.includes('robuste')) p *= 0.5;
     if (chance(state, p)) {
       c.sick = randInt(state, 18, 60);
       logEvent(state, { type: 'sickness', actorId: c.id, importance: c.isPlayer ? 3 : 2, locationId: c.locationId,
