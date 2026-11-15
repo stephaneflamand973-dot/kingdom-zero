@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  GRADE_NAMES, gradeOf, foundingCost,
+  GRADE_NAMES, gradeOf, foundingCost, opportunityLabel,
   activeContract, applyForJob, businessesForSale, deliver, jobOffer, openOrders, quitJob, takeOrder,
   buyHome, carryCapacity, found, FOUNDABLE, FOUNDING_COST, hasAccess, ITEM_IDS, leaveHome, ownerOrder, propertiesAt, purchaseBusiness,
   purchaseOffer, rentHome, RECIPES, settlementIdOf, store, takeOut, weightOf, WEIGHT, type BusinessKind, type Property,
@@ -299,14 +299,16 @@ function FoundingCard({ game }: { game: Game }) {
   return (
     <details className="board founding">
       <summary className="sub">Fonder un établissement</summary>
-      <p className="muted small">L’intendance vend un terrain et fait bâtir ; le fonds de roulement part dans la caisse de la nouvelle affaire. Un comptoir achète et revend de tout : idéal pour stocker ce que tu rapportes d’ailleurs.</p>
+      <p className="muted small">L’intendance vend un terrain et fait bâtir ; le fonds de roulement part dans la caisse de la nouvelle affaire, qui achète et embauche dès le lendemain. Regarde la demande locale : une affaire sans clients ne vend rien. Un comptoir achète et revend de tout : idéal pour stocker ce que tu rapportes d’ailleurs.</p>
       <label className="small" htmlFor="capital">Fonds de roulement : <b>{capital} d</b></label>
       <input id="capital" type="range" min={50} max={400} step={25} value={capital} onChange={e => setCapital(Number(e.target.value))} />
       <ul className="orders">
         {FOUNDABLE.map(k => (
           <li key={k}>
             <span className="ico">🏗</span>
-            <div><b>{names[k]}</b><div className="muted small">{foundingCost(p, k)} d de travaux{foundingCost(p, k)! < (FOUNDING_COST[k] ?? 0) ? ' (prix de maître)' : ''} + {capital} d</div></div>
+            <div><b>{names[k]}</b> <span className={`demand ${opportunityLabel(state, k, state.locations[p.locationId].settlementId).level}`} title={opportunityLabel(state, k, state.locations[p.locationId].settlementId).why}>demande {opportunityLabel(state, k, state.locations[p.locationId].settlementId).level}</span>
+              <div className="muted small">{opportunityLabel(state, k, state.locations[p.locationId].settlementId).why}</div>
+              <div className="muted small">{foundingCost(p, k)} d de travaux{foundingCost(p, k)! < (FOUNDING_COST[k] ?? 0) ? ' (prix de maître)' : ''} + {capital} d</div></div>
             <button className="btn sm" disabled={!!state.gameOver || p.money < (foundingCost(p, k) ?? 0) + capital} onClick={() => act(s => found(s, k, capital))}>Fonder</button>
           </li>
         ))}

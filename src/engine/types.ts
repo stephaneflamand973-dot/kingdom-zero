@@ -156,6 +156,7 @@ export interface Business {
   daysInDeficit: number;
   lastTreasury: number;
   lastStaffChangeDay: number;
+  startup?: boolean;        // jeune affaire en période de lancement : réserve de prudence réduite
   seasonal?: string[];      // journaliers de moisson, libérés à l'hiver (phase 6)
   lastShortageDay: Partial<Record<ItemId, number>>;
   /** Fondée par un particulier (phase 3) */

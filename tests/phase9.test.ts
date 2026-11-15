@@ -196,3 +196,64 @@ describe('Sauvegardes', () => {
     expect(slotInfo(store, 'rapide')).toBeNull();
   });
 });
+
+import { allBusinesses, chooseTavern, found, isHiring, manageBusiness, opportunityLabel, P, reserveFor, transferMoney, liveDays } from '../src/engine';
+
+describe('Fonder son établissement', () => {
+  /** Dote le joueur en prenant aux caisses existantes (aucun denier créé). */
+  const fund = (s: GameState, amount: number) => {
+    const p = s.characters.player;
+    for (const b of allBusinesses(s).slice().sort((a, b) => b.treasury - a.treasury)) {
+      const take = Math.min(Math.max(0, b.treasury - 80), amount - p.money);
+      if (take > 0) transferMoney(s, P.b(b.id), P.c(p.id), take);
+    }
+    return p;
+  };
+
+  it('une boulangerie fondée avec 100 d de fonds embauche, s’approvisionne et produit dès la première semaine', () => {
+    const s = createWorld(5, { firstName: 'A', lastName: 'B', sex: 'M', age: 24, perks: [] });
+    const p = fund(s, 420);
+    const r = found(s, 'bakery', 100);
+    expect(r.ok).toBe(true);
+    expect(r.message).toContain('Fournil'); // le lieu est indiqué
+    const b = allBusinesses(s).find(x => x.ownerId === p.id)!;
+    expect(b.startup).toBe(true);
+    expect(reserveFor(b)).toBeLessThan(100);
+    for (let d = 0; d < 7; d++) { liveDays(s, 1); if (s.encounter) s.encounter = undefined; }
+    expect(b.employees.length).toBeGreaterThan(0);
+    expect(b.produced.bread ?? 0).toBeGreaterThan(20);
+    expect(checkIntegrity(s)).toEqual([]);
+  }, 20000);
+
+  it('la période de lancement prend fin, et une jeune affaire d’une ancienne sauvegarde en bénéficie', () => {
+    const s = createWorld(6, { firstName: 'A', lastName: 'B', sex: 'M', age: 24, perks: [] });
+    const p = fund(s, 420);
+    found(s, 'bakery', 100);
+    const b = allBusinesses(s).find(x => x.ownerId === p.id)!;
+    delete b.startup; // comme dans une sauvegarde d'avant le correctif
+    manageBusiness(s, b);
+    expect(b.startup).toBe(true);
+    b.founded = -200;
+    manageBusiness(s, b);
+    expect(b.startup).toBeUndefined();
+    expect(isHiring(s, b) === true || isHiring(s, b) === false).toBe(true);
+  });
+
+  it('un second cabaret trouve des clients : chacun choisit sa taverne', () => {
+    const s = createWorld(7, { firstName: 'A', lastName: 'B', sex: 'M', age: 24, perks: [] });
+    const p = fund(s, 520);
+    found(s, 'tavern', 200);
+    const mine = allBusinesses(s).find(x => x.ownerId === p.id)!;
+    mine.stock.ale = 0; // stock nul : compté tel quel
+    const rival = allBusinesses(s).find(x => x.kind === 'tavern' && x.id !== mine.id && s.locations[x.locationId].settlementId === 'valcendre')!;
+    // les deux ont de la bière au même prix
+    const moved = Math.min(10, rival.stock.ale ?? 0);
+    rival.stock.ale = (rival.stock.ale ?? 0) - moved; mine.stock.ale = moved;
+    const picks = Object.values(s.characters).filter(c => !c.isPlayer && c.alive && s.locations[c.homeId].settlementId === 'valcendre').map(c => chooseTavern(s, c, 'valcendre')!.id);
+    expect(picks.includes(mine.id)).toBe(true);
+    expect(picks.includes(rival.id)).toBe(true);
+    expect(chooseTavern(s, s.characters[rival.ownerId!], 'valcendre', true)!.id).toBe(rival.id); // soir de fête : l'auberge historique
+    expect(opportunityLabel(s, 'forge', 'staubin').level).toBe('forte');
+    expect(opportunityLabel(s, 'bakery', 'valcendre').level).toBe('moyenne');
+  });
+});

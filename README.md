@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 138 tests automatisés (scénarios A–G, phases 2 à 9, invariants, fuzz) |
+| `npm test` | 141 tests automatisés (scénarios A–G, phases 2 à 9, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -506,6 +506,16 @@ enfant » (onglet Famille), une chance sur trois chaque soir, au plus une fois p
 sauvegarde automatique, la rapide et six emplacements, chacun avec le nom du personnage, la date de jeu, la bourse
 et l'heure d'enregistrement ; on peut les écraser (après confirmation) ou les effacer. **Télécharger le fichier**
 enregistre la partie en `.json` (à réimporter sur n'importe quel appareil) ; la copie en texte reste possible.
+
+**Bogue corrigé : fonder son établissement « ne faisait rien ».** L'affaire était bien créée, mais restait
+inerte : la réserve de prudence d'une maison établie (156 à 180 d) l'empêchait d'embaucher et d'acheter avec
+100 d de fonds. Une jeune affaire a désormais une **période de lancement** de 56 jours (réserve réduite à une
+journée de gages) ; les affaires déjà fondées dans une sauvegarde en bénéficient. Une boulangerie fondée avec
+100 d embauche deux ouvriers et cuit 440 pains en deux semaines. Les habitants **choisissent leur taverne**
+(bière disponible, prix, amitié pour le tenancier, habitudes) au lieu d'aller tous à la première : un second
+cabaret trouve sa clientèle. La fiche de fondation affiche la **demande locale** (forte sans concurrent,
+moyenne pour le pain et la bière, faible pour les outils et le négoce face à un concurrent), et le message
+indique où se trouve l'affaire et comment la diriger.
 
 **Testament.** Dans l'onglet Famille, on désigne son héritier parmi sa famille ou ses amis proches : il reçoit
 biens, maisons et affaires, et il est le premier proposé pour reprendre la lignée. Le testament s'efface à la

@@ -169,8 +169,8 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
   }
 
   // Sociabiliser à la taverne (la fête de saison attire tout le village)
-  const tavern = businessesIn(state, home.id).find(b => b.kind === 'tavern');
   const feast = festivalTonight(state, home.squareId);
+  const tavern = chooseTavern(state, c, home.id, !!feast);
   if (tavern && hour >= 17 && hour < 23 && (n.social < 85 || feast) && n.energy > 15) {
     let s = 30 + (100 - n.social) * 0.45 + (feast ? 45 : 0);
     if (hasTrait(c, 'sociable')) s += 15;
@@ -201,6 +201,20 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
   opts.sort((a, b) => b.score - a.score);
   opts[0].run();
   state.stats.npcActions += 1;
+}
+
+/**
+ * Quelle taverne ce soir ? S'il y en a plusieurs, chacun choisit selon la bière disponible, son prix, son
+ * amitié pour le tenancier et ses habitudes (une préférence stable par personne) : une nouvelle enseigne
+ * trouve ainsi sa clientèle. Un soir de fête, tout le monde va à l'auberge qui la reçoit.
+ */
+export function chooseTavern(state: GameState, c: Character, settlementId: string, feast = false): Business | undefined {
+  const taverns = businessesIn(state, settlementId).filter(b => b.kind === 'tavern');
+  if (taverns.length <= 1 || feast) return taverns[0];
+  const habit = (b: Business) => { let h = 0; for (const ch of c.id + b.id) h = (h * 31 + ch.charCodeAt(0)) % 997; return h % 7; };
+  return taverns.map(b => ({ b, score: (qty(b.stock, 'ale') > 0 ? 10 : 0) - askPrice(state, b, 'ale')
+    + (b.ownerId ? getRelation(state, c.id, b.ownerId).affinity / 15 : 0) + habit(b) + (b.ownerId === c.id ? 50 : 0) }))
+    .sort((x, y) => y.score - x.score || (x.b.id < y.b.id ? -1 : 1))[0].b;
 }
 
 function describeWork(state: GameState, c: Character, job: Business, loc: string): string {

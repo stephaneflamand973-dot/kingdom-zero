@@ -215,13 +215,21 @@ export function payWage(state: GameState, b: Business, worker: Character, amount
 }
 
 export function reserveFor(b: Business): number {
+  // une affaire qui se lance ne garde qu'une journée de gages d'avance (sinon elle n'embauche ni n'achète jamais)
+  if (b.startup) return b.wage * 8 * Math.max(1, b.employees.length) + 20;
   return b.wage * 8 * Math.max(1, b.employees.length) * 3 + 60;
 }
+export const STARTUP_DAYS = 56;
 
 // ── Gestion quotidienne par le propriétaire (ou l'intendance) ─
 
 export function manageBusiness(state: GameState, b: Business, procurementOnly = false): void {
   const owner = b.ownerId ? state.characters[b.ownerId] : undefined;
+  // fin de la période de lancement : l'affaire adopte la prudence d'une maison établie
+  const age = b.founded !== undefined ? toDate(state.time).day - b.founded : Infinity;
+  if (b.startup && age > STARTUP_DAYS) delete b.startup;
+  // une affaire fondée avant cette règle (ancienne sauvegarde) et encore jeune bénéficie aussi du lancement
+  else if (b.startup === undefined && age <= STARTUP_DAYS) b.startup = true;
   const reserve = reserveFor(b);
 
   // 1. Rembourser les salaires impayés en priorité

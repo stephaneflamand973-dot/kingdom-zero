@@ -31,3 +31,4 @@ export * from './approaches';
 export * from './quests';
 export * from './career';
 export * from './perks';
+export { chooseTavern } from './npc';

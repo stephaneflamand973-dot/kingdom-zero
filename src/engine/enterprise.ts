@@ -139,6 +139,7 @@ export function foundBusiness(state: GameState, founder: Character, kind: Busine
     maxWorkers: tpl.maxWorkers, wage: tpl.wage, employees: [], openFrom: tpl.openFrom, openTo: tpl.openTo,
     sells: tpl.sells.slice(), buys: tpl.buys.slice(), targets: { ...tpl.targets }, produced: {},
     daysInDeficit: 0, lastTreasury: capital, lastStaffChangeDay: -99, lastShortageDay: {}, founded: toDate(state.time).day,
+    startup: true,
   };
   state.businesses[b.id] = b;
   state.businessOrder.push(b.id);
@@ -165,7 +166,7 @@ export function foundAsPlayer(state: GameState, kind: BusinessKind, capital: num
   if (p.money < cost + capital) return no(`Il te faut ${cost} d de travaux et ${capital} d de fonds de roulement (${cost + capital} d).`);
   const b = foundBusiness(state, p, kind, loc.settlementId, capital);
   if (!b) return no('La fondation a échoué.');
-  return { ok: true, message: `Tu fondes ${b.name}. Il ouvrira demain matin : ton contremaître achètera ses premières marchandises avec les ${capital} d de la caisse.`, minutes: 120 };
+  return { ok: true, message: `Tu fondes ${b.name}, à ${state.locations[b.locationId].name}. Dès demain matin, l’affaire achète ses marchandises avec les ${capital} d de sa caisse${b.maxWorkers > 0 ? ' et embauche si elle peut payer une journée de gages' : ''}. Va sur place pour la diriger (gages, effectifs, caisse)${b.kind !== 'market' ? ' ou y travailler toi-même' : ''} ; elle figure dans l’onglet Affaires.`, minutes: 120 };
 }
 
 /** Intérêt d'ouvrir tel établissement dans une localité : rareté locale de ce qu'il vend. */
@@ -178,6 +179,25 @@ export function foundingOpportunity(state: GameState, kind: BusinessKind, settle
   const prices = local.filter(b => b.sells.includes(out) && qty(b.stock, out) > 0).map(b => askPrice(state, b, out));
   const ratio = prices.length ? Math.min(...prices) / ITEMS[out].base : 2;
   return ratio - same * 0.4;
+}
+
+/** Demande locale lisible pour le joueur, avant de fonder. */
+export function opportunityLabel(state: GameState, kind: BusinessKind, settlementId: string): { level: 'forte' | 'moyenne' | 'faible'; why: string } {
+  const tpl = TEMPLATE[kind];
+  const out = tpl?.sells[0] as ItemId;
+  const rivals = businessesIn(state, settlementId).filter(b => b.kind === kind);
+  const stock = rivals.reduce((a, b) => a + qty(b.stock, out), 0);
+  const target = rivals.reduce((a, b) => a + (b.targets[out] ?? 0), 0);
+  // pain et bière se consomment chaque jour : la clientèle se partage entre enseignes ;
+  // outils et négoce ne trouvent preneur que si le concurrent en place vient à manquer
+  const daily = kind === 'bakery' || kind === 'tavern';
+  const level = rivals.length === 0 ? 'forte' : daily ? 'moyenne' : 'faible';
+  const n = `${rivals.length} concurrent${rivals.length > 1 ? 's' : ''}`;
+  const why = kind === 'market' && rivals.length ? `${n} déjà installé${rivals.length > 1 ? 's' : ''} : un second comptoir sert surtout à entreposer et revendre ce que tu rapportes d’ailleurs`
+    : rivals.length === 0 ? 'aucun concurrent ici : toute la clientèle est à prendre'
+    : daily ? `clientèle à partager avec ${n} (${stock} ${ITEMS[out].plural} en réserve en face)`
+    : `${n} déjà installé${rivals.length > 1 ? 's' : ''}, avec ${stock} ${ITEMS[out].plural} à vendre${stock > target ? ' : difficile de s’y faire une place' : ''}`;
+  return { level, why };
 }
 
 /** PNJ ambitieux sans affaire à racheter : il fonde là où l'offre manque. */

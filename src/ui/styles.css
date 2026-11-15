@@ -467,3 +467,7 @@ kbd { font-family: var(--serif); background: var(--wood-3); border: 1px solid va
 @media (max-width: 640px) { .cc-grid, .perk-list { grid-template-columns: 1fr; } }
 .cc-grid .opt-group { display: flex; gap: 16px; align-items: center; }
 .cc-grid .opt-group label { display: inline-flex; flex-direction: row; gap: 6px; align-items: center; }
+.demand { font-size: .72rem; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); margin-left: 4px; }
+.demand.forte { background: rgba(127,176,105,.22); border-color: #557a45; }
+.demand.moyenne { background: rgba(227,168,59,.18); }
+.demand.faible { background: rgba(168,50,45,.25); border-color: #8e2b2b; }
