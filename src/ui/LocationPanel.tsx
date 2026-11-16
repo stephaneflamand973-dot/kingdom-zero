@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  GRADE_NAMES, gradeOf, foundingCost, opportunityLabel,
+  GRADE_NAMES, gradeOf, foundingCost, opportunityLabel, businessDiagnosis, moveTo, recommendedCapital,
   activeContract, applyForJob, businessesForSale, deliver, jobOffer, openOrders, quitJob, takeOrder,
   buyHome, carryCapacity, found, FOUNDABLE, FOUNDING_COST, hasAccess, ITEM_IDS, leaveHome, ownerOrder, propertiesAt, purchaseBusiness,
   purchaseOffer, rentHome, RECIPES, settlementIdOf, store, takeOut, weightOf, WEIGHT, type BusinessKind, type Property,
@@ -220,16 +220,23 @@ function PurchaseRow({ game, b }: { game: Game; b: Business }) {
   );
 }
 
-function OwnerPanel({ game, b }: { game: Game; b: Business }) {
+export function OwnerPanel({ game, b }: { game: Game; b: Business }) {
   const { state, act } = game;
   const over = !!state.gameOver;
+  const p = state.characters[state.playerId];
+  const here = p.locationId === b.locationId;
+  const diag = businessDiagnosis(state, b);
+  const dep = (n: number) => act(s => ownerOrder(s, b.id, { kind: 'deposit', amount: n }));
   const outputs = b.kind === 'market' ? b.sells : (Object.keys(RECIPES[b.kind]?.outputs ?? {}) as ItemId[]);
   return (
     <div className="owner">
       <div className="owner-head"><strong>Ton affaire</strong><span className="muted small">Ton contremaître achète, vend et embauche selon tes consignes.</span></div>
+      <p className={diag.ok ? 'notice' : 'warn'} role="status">{diag.text}{diag.advice ? ` ${diag.advice}` : ''}</p>
+      {b.startup && <p className="muted small">Jeune affaire : embauche facilitée encore {Math.max(0, 56 - (toDate(state.time).day - (b.founded ?? 0)))} jours.</p>}
+      {!here && <p className="muted small">La caisse se gère sur place ({state.locations[b.locationId].name}) ; gages, effectif et stock visé se règlent d’ici. <button className="link" disabled={over} onClick={() => act(s => moveTo(s, b.locationId))}>S’y rendre</button></p>}
       <div className="owner-grid">
         <span>Caisse</span><b>{b.treasury} d</b>
-        <div className="slot-btns"><button className="btn sm ghost" disabled={over || b.treasury < 1} onClick={() => act(s => ownerOrder(s, b.id, { kind: 'withdraw', amount: 50 }))}>Retirer 50</button><button className="btn sm ghost" disabled={over} onClick={() => act(s => ownerOrder(s, b.id, { kind: 'deposit', amount: 50 }))}>Déposer 50</button></div>
+        <div className="slot-btns"><button className="btn sm ghost" disabled={over || !here || b.treasury < 1} onClick={() => act(s => ownerOrder(s, b.id, { kind: 'withdraw', amount: 50 }))}>Retirer 50</button><button className="btn sm ghost" disabled={over || !here || p.money < 1} onClick={() => dep(50)}>Déposer 50</button>{diag.need !== undefined && diag.need > 0 && <button className="btn sm" disabled={over || !here || p.money < diag.need} title={p.money < diag.need ? `Il te faut ${diag.need} d` : ''} onClick={() => dep(diag.need!)}>Déposer {diag.need} (le nécessaire)</button>}</div>
         <span>Salaire</span><b>{b.wage} d/h</b>
         <div className="slot-btns"><button className="btn sm ghost" disabled={over} onClick={() => act(s => ownerOrder(s, b.id, { kind: 'wage', delta: -1 }))}>−</button><button className="btn sm ghost" disabled={over} onClick={() => act(s => ownerOrder(s, b.id, { kind: 'wage', delta: 1 }))}>+</button></div>
         <span>Ouvriers</span><b>{b.employees.length}/{b.maxWorkers}</b>
@@ -294,7 +301,7 @@ function PropertyCard({ game, pr }: { game: Game; pr: Property }) {
 function FoundingCard({ game }: { game: Game }) {
   const { state, act } = game;
   const p = state.characters[state.playerId];
-  const [capital, setCapital] = useState(100);
+  const [capital, setCapital] = useState(250);
   const names: Partial<Record<BusinessKind, string>> = { market: 'Comptoir de négoce', bakery: 'Boulangerie', tavern: 'Cabaret', forge: 'Atelier de forge' };
   return (
     <details className="board founding">
@@ -308,6 +315,7 @@ function FoundingCard({ game }: { game: Game }) {
             <span className="ico">🏗</span>
             <div><b>{names[k]}</b> <span className={`demand ${opportunityLabel(state, k, state.locations[p.locationId].settlementId).level}`} title={opportunityLabel(state, k, state.locations[p.locationId].settlementId).why}>demande {opportunityLabel(state, k, state.locations[p.locationId].settlementId).level}</span>
               <div className="muted small">{opportunityLabel(state, k, state.locations[p.locationId].settlementId).why}</div>
+              <div className={capital < recommendedCapital(k) ? 'warn small' : 'muted small'}>Fonds conseillé : {recommendedCapital(k)} d{capital < recommendedCapital(k) ? ' — avec moins, l’affaire risque de ne pas pouvoir embaucher' : ''}</div>
               <div className="muted small">{foundingCost(p, k)} d de travaux{foundingCost(p, k)! < (FOUNDING_COST[k] ?? 0) ? ' (prix de maître)' : ''} + {capital} d</div></div>
             <button className="btn sm" disabled={!!state.gameOver || p.money < (foundingCost(p, k) ?? 0) + capital} onClick={() => act(s => found(s, k, capital))}>Fonder</button>
           </li>

@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 141 tests automatisés (scénarios A–G, phases 2 à 9, invariants, fuzz) |
+| `npm test` | 143 tests automatisés (scénarios A–G, phases 2 à 9, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -516,6 +516,14 @@ journée de gages) ; les affaires déjà fondées dans une sauvegarde en bénéf
 cabaret trouve sa clientèle. La fiche de fondation affiche la **demande locale** (forte sans concurrent,
 moyenne pour le pain et la bière, faible pour les outils et le négoce face à un concurrent), et le message
 indique où se trouve l'affaire et comment la diriger.
+
+**Diriger ses affaires depuis l'onglet Affaires.** Chaque affaire du joueur y affiche désormais son
+**diagnostic** (elle tourne, caisse trop maigre pour embaucher et combien déposer, matière première manquante,
+réserves pleines) et ses commandes : gages, effectif et stock visé se règlent à distance ; la caisse se gère sur
+place, avec un lien pour s'y rendre et un bouton « déposer le nécessaire ». La fondation affiche un **fonds
+conseillé** par type d'affaire (matières premières et trois jours de gages : 225 à 275 d) : une boulangerie
+ainsi dotée emploie 2 ouvriers et cuit 790 pains en quatre semaines. Une forge ou un comptoir face à un
+concurrent installé restent difficiles à rentabiliser (demande « faible »).
 
 **Testament.** Dans l'onglet Famille, on désigne son héritier parmi sa famille ou ses amis proches : il reçoit
 biens, maisons et affaires, et il est le premier proposé pour reprendre la lignée. Le testament s'efface à la

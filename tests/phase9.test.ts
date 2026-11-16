@@ -257,3 +257,31 @@ describe('Fonder son établissement', () => {
     expect(opportunityLabel(s, 'bakery', 'valcendre').level).toBe('moyenne');
   });
 });
+
+import { businessDiagnosis, hiringThreshold, recommendedCapital, FOUNDABLE, ownerOrder } from '../src/engine';
+
+describe('Diriger son affaire', () => {
+  it('le diagnostic explique une caisse trop maigre et dit combien déposer ; le dépôt débloque l’embauche', () => {
+    const s = createWorld(8, { firstName: 'A', lastName: 'B', sex: 'M', age: 24, perks: [] });
+    const p = s.characters.player;
+    for (const b of allBusinesses(s).slice().sort((a, b) => b.treasury - a.treasury)) { const t = Math.min(Math.max(0, b.treasury - 80), 700 - p.money); if (t > 0) transferMoney(s, P.b(b.id), P.c(p.id), t); }
+    found(s, 'bakery', 50);
+    const b = allBusinesses(s).find(x => x.ownerId === p.id)!;
+    transferMoney(s, P.b(b.id), P.c(p.id), b.treasury - 15); // caisse à 15 d, comme dans le cas signalé
+    const d = businessDiagnosis(s, b);
+    expect(d.ok).toBe(false);
+    expect(d.text).toMatch(/trop maigre/);
+    expect(d.need).toBe(hiringThreshold(b) - 15);
+    p.locationId = 'square';
+    expect(ownerOrder(s, b.id, { kind: 'deposit', amount: d.need! }).ok).toBe(false); // la caisse se gère sur place
+    p.locationId = b.locationId;
+    expect(ownerOrder(s, b.id, { kind: 'deposit', amount: d.need! }).ok).toBe(true);
+    expect(businessDiagnosis(s, b).ok).toBe(true);
+    expect(checkIntegrity(s)).toEqual([]);
+  });
+
+  it('chaque type d’affaire a un fonds conseillé qui couvre matières premières et gages', () => {
+    for (const k of FOUNDABLE) expect(recommendedCapital(k)).toBeGreaterThanOrEqual(150);
+    expect(recommendedCapital('forge')).toBeGreaterThan(recommendedCapital('tavern'));
+  });
+});

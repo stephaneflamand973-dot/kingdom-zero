@@ -8,6 +8,7 @@ import {
   type AttrId, type GameState, type ItemId, type SkillId, type WorldEvent,
 } from '../engine';
 import { ACTIVITY_COLOR } from './VillageMap';
+import { OwnerPanel } from './LocationPanel';
 import type { Game } from './useGame';
 
 type Tab = 'perso' | 'famille' | 'inv' | 'affaires' | 'rel' | 'journal' | 'monde' | 'pouvoir' | 'requetes';
@@ -136,7 +137,10 @@ function Affaires({ game }: { game: Game }) {
       <h4>Tes entreprises</h4>
       {owned.length === 0 && <p className="muted small">Aucune. Rachète une affaire en difficulté ou fonde un établissement depuis une place.</p>}
       {owned.map(b => (
-        <div key={b.id} className="card-line"><div><b>{b.name}</b> · {state.settlements[settlementIdOf(state, b.locationId)].name}<div className="muted small">Caisse {b.treasury} d · {b.employees.length} ouvrier{b.employees.length > 1 ? 's' : ''} à {b.wage} d/h · stock {(Object.keys(b.stock) as ItemId[]).map(i => `${ITEM_ICON[i]} ${b.stock[i]}`).join(' ') || 'vide'}</div></div></div>
+        <div key={b.id} className="owned-biz">
+          <div className="card-line"><div><b>{b.name}</b> · {state.settlements[settlementIdOf(state, b.locationId)].name}<div className="muted small">Caisse {b.treasury} d · {b.employees.length} ouvrier{b.employees.length > 1 ? 's' : ''} à {b.wage} d/h · stock {(Object.keys(b.stock) as ItemId[]).map(i => `${ITEM_ICON[i]} ${b.stock[i]}`).join(' ') || 'vide'}</div></div></div>
+          <OwnerPanel game={game} b={b} />
+        </div>
       ))}
       <h4>Tes dettes</h4>
       {owes.length === 0 && <p className="muted small">Tu ne dois rien à personne.</p>}

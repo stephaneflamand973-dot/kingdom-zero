@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 // Entreprises (phase 3) : rachat et gestion par le joueur, fondation de nouveaux établissements.
 // ─────────────────────────────────────────────────────────────
-import { PROFESSION_BY_BUSINESS, WORK_SKILL } from './data';
-import { askPrice, P, transferMoney } from './economy';
+import { PROFESSION_BY_BUSINESS, RECIPES, WORK_SKILL } from './data';
+import { askPrice, outputCap, P, reserveFor, transferMoney } from './economy';
 import { logEvent } from './events';
 import { businessValue, transferBusiness } from './finance';
 import { getRelation } from './social';
@@ -218,4 +218,42 @@ export function npcFounding(state: GameState, c: Character): Business | undefine
     c.employerId = undefined;
   }
   return foundBusiness(state, c, best.k, sid, capital);
+}
+
+/** Fonds de roulement conseillé : de quoi garnir l'atelier en matières premières et payer trois jours de gages. */
+export function recommendedCapital(kind: BusinessKind): number {
+  const tpl = TEMPLATE[kind];
+  if (!tpl) return 100;
+  const inputs = tpl.buys.reduce((a, it) => a + (tpl.targets[it] ?? 0) * ITEMS[it].base, 0);
+  const wages = tpl.maxWorkers > 0 ? tpl.wage * 8 * 3 : 0;
+  return Math.ceil((inputs * (kind === 'market' ? 0.6 : 1) + wages + 40) / 25) * 25;
+}
+
+/** Somme qu'une affaire sans personnel doit avoir en caisse pour embaucher son premier ouvrier. */
+export function hiringThreshold(b: Business): number { return Math.ceil(reserveFor(b) * 1.2) + 1; }
+
+export interface Diagnosis { ok: boolean; text: string; advice?: string; need?: number }
+
+/** Pourquoi une affaire du joueur tourne ou reste à l'arrêt, et quoi faire. */
+export function businessDiagnosis(_state: GameState, b: Business): Diagnosis {
+  const r = RECIPES[b.kind];
+  const outputs = r ? (Object.keys(r.outputs) as ItemId[]) : [];
+  const missing = r ? (Object.keys(r.inputs) as ItemId[]).find(it => qty(b.stock, it) < (r.inputs[it] ?? 0)) : undefined;
+  const full = outputs.length > 0 && outputs.every(it => qty(b.stock, it) >= outputCap(b, it));
+  if (b.kind === 'market') {
+    return b.treasury < 20
+      ? { ok: false, text: 'Caisse presque vide : le comptoir ne peut plus rien acheter.', advice: 'Dépose de l’argent, ou vends-y toi-même des marchandises rapportées d’ailleurs.', need: 60 - b.treasury }
+      : { ok: true, text: 'Le comptoir achète quand les prix sont bas et revend avec une marge.' };
+  }
+  if (b.maxWorkers === 0) return { ok: false, text: 'Effectif maximal réglé à zéro : personne ne peut être embauché.', advice: 'Augmente le nombre d’ouvriers (bouton +).' };
+  if (b.employees.length === 0) {
+    const need = hiringThreshold(b);
+    if (full) return { ok: false, text: 'Les réserves sont pleines : inutile d’embaucher tant que rien ne se vend.', advice: 'Baisse le stock visé pour faire baisser tes prix, ou attends les clients.' };
+    if (b.treasury < need) return { ok: false, text: `Caisse trop maigre pour embaucher : il faut ${need} d pour garantir une journée de gages (il y a ${b.treasury} d).`,
+      advice: `Dépose au moins ${need - b.treasury} d dans la caisse (sur place), ou travaille-y toi-même : ton travail produit sans coûter de gages.`, need: need - b.treasury };
+    return { ok: true, text: 'La caisse permet d’embaucher : un ouvrier sera pris au prochain matin, s’il y a un candidat sans emploi.' };
+  }
+  if (missing) return { ok: false, text: `Il manque des ${ITEMS[missing].plural} : la production est à l’arrêt.`, advice: b.treasury < 20 ? 'La caisse ne permet plus d’en acheter : dépose de l’argent.' : 'L’affaire en rachètera au prochain matin si un vendeur en a.' };
+  if (full) return { ok: true, text: 'Les réserves sont pleines : la production attend les ventes.', advice: 'Si cela dure, baisse le stock visé ou réduis l’effectif.' };
+  return { ok: true, text: `L’affaire tourne avec ${b.employees.length} ouvrier${b.employees.length > 1 ? 's' : ''}.` };
 }
