@@ -6,15 +6,17 @@
 import { rand, randInt } from './rng';
 import type { Character, GameState } from './types';
 import { clamp, fullName } from './util';
+import { gearBonus } from './gear';
 
 export interface Fighter { id: string; name: string; hp: number; attack: number; defense: number }
 
 export function fighterOf(c: Character): Fighter {
   const fatigue = c.needs.energy < 20 ? 0.8 : 1;
+  const gear = gearBonus(c); // armes et armures (phase 10)
   return {
     id: c.id, name: fullName(c), hp: Math.round(c.health),
-    attack: (4 + c.skills.combat / 8 + c.attributes.force * 0.8) * fatigue * (c.sick > 0 ? 0.7 : 1),
-    defense: 2 + c.skills.combat / 12 + c.attributes.agilite * 0.5,
+    attack: (4 + c.skills.combat / 8 + c.attributes.force * 0.8) * fatigue * (c.sick > 0 ? 0.7 : 1) + gear.attack,
+    defense: 2 + c.skills.combat / 12 + c.attributes.agilite * 0.5 + gear.defense,
   };
 }
 

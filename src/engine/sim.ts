@@ -4,6 +4,7 @@
 // franchie (résolution horaire), puis à chaque frontière de jour.
 // `processedHours` garantit qu'une heure n'est jamais simulée deux fois.
 // ─────────────────────────────────────────────────────────────
+import { dailyLifestyle } from './gear';
 import { learningRate } from './career';
 import { cleanupQuests, dailyChronicle, dailyQuests } from './quests';
 import { npcApproaches } from './approaches';
@@ -367,6 +368,7 @@ export function dayTick(state: GameState): void {
   state.festivals = state.festivals.filter(f => f.day >= d.day);
 
   // Phase 7 : requêtes des habitants et chronique de la lignée
+  dailyLifestyle(state);
   cleanupQuests(state);
   dailyQuests(state);
   dailyChronicle(state);

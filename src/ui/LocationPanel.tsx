@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  GEAR, GEAR_IDS, gearPrice, buyGear, repairCost, repairGear,
   GRADE_NAMES, gradeOf, foundingCost, opportunityLabel, businessDiagnosis, moveTo, recommendedCapital,
   activeContract, applyForJob, businessesForSale, deliver, jobOffer, openOrders, quitJob, takeOrder,
   buyHome, carryCapacity, found, FOUNDABLE, FOUNDING_COST, hasAccess, ITEM_IDS, leaveHome, ownerOrder, propertiesAt, purchaseBusiness,
@@ -129,6 +130,7 @@ function BusinessCard({ game, b }: { game: Game; b: Business }) {
       )}
 
       <ContractRow game={game} b={b} />
+      {b.kind === 'forge' && <Armory game={game} b={b} />}
       {b.ownerId === p.id ? <OwnerPanel game={game} b={b} /> : <PurchaseRow game={game} b={b} />}
 
       {stealable.length > 0 && (
@@ -321,6 +323,41 @@ function FoundingCard({ game }: { game: Game }) {
           </li>
         ))}
       </ul>
+    </details>
+  );
+}
+
+function Armory({ game, b }: { game: Game; b: Business }) {
+  const { state, act } = game;
+  const p = state.characters[state.playerId];
+  const over = !!state.gameOver;
+  const metal = qty(b.stock, 'tools');
+  return (
+    <details className="board armory">
+      <summary className="sub">Armurerie — {metal} pièce{metal > 1 ? 's' : ''} de métal ouvré en réserve</summary>
+      <p className="muted small">Chaque arme ou armure est forgée avec le métal de la forge (ses outils en stock) : si la réserve est vide, il faut attendre qu’elle produise. L’équipement compte en combat et s’use à chaque coup.</p>
+      <ul className="orders">
+        {GEAR_IDS.map(id => {
+          const g = GEAR[id];
+          const price = gearPrice(state, b, id);
+          const worn = p.gear?.[g.slot]?.id === id;
+          return (
+            <li key={id}>
+              <span className="ico">{g.slot === 'weapon' ? '⚔' : '🛡'}</span>
+              <div><b>{g.name}</b>{worn && <span className="demand forte">porté</span>}
+                <div className="muted small">{g.attack ? `attaque +${g.attack}` : ''}{g.attack && g.defense ? ' · ' : ''}{g.defense ? `défense +${g.defense}` : ''} · {g.note}</div>
+                <div className="muted small">{price} d · {g.units} pièce{g.units > 1 ? 's' : ''} de métal{metal < g.units ? ' (réserve insuffisante)' : ''}</div></div>
+              <button className="btn sm" disabled={over || p.money < price || metal < g.units} onClick={() => act(s => buyGear(s, b.id, id))}>Forger</button>
+            </li>
+          );
+        })}
+      </ul>
+      {(['weapon', 'armor'] as const).map(slot => {
+        const g = p.gear?.[slot];
+        if (!g || !g.wear) return null;
+        const cost = repairCost(state, b, p, slot);
+        return <div key={slot} className="work-row"><div className="work-info"><strong>Réparer : {GEAR[g.id].name}</strong><span>usure {g.wear}/{GEAR[g.id].durability}</span></div><button className="btn sm ghost" disabled={over || p.money < cost} onClick={() => act(s => repairGear(s, b.id, slot))}>Réparer ({cost} d)</button></div>;
+      })}
     </details>
   );
 }

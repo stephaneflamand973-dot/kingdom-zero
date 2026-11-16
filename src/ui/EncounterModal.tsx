@@ -1,4 +1,4 @@
-import { encounterAction, fullName, type EncounterChoice } from '../engine';
+import { encounterAction, fighterOf, fullName, GEAR, type EncounterChoice } from '../engine';
 import { Crest } from './icons';
 import type { Game } from './useGame';
 import { useModal } from './a11y';
@@ -33,7 +33,7 @@ export function EncounterModal({ game }: { game: Game }) {
         <div className="fighters">
           <div className="fighter you">
             <Crest id="player" initials="Toi" size={40} />
-            <div><b>{fullName(p)}</b><div className="hpbar"><div style={{ width: `${p.health}%` }} /></div><span className="small">{Math.round(p.health)} PV · combat {p.skills.combat}</span></div>
+            <div><b>{fullName(p)}</b><div className="hpbar"><div style={{ width: `${p.health}%` }} /></div><span className="small">{Math.round(p.health)} PV · attaque {fighterOf(p).attack.toFixed(1)} · défense {fighterOf(p).defense.toFixed(1)}{p.gear?.weapon ? ` · ${GEAR[p.gear.weapon.id].name}` : ''}{p.gear?.armor ? ` · ${GEAR[p.gear.armor.id].name}` : ''}</span></div>
           </div>
           {e.enemies.map(id => {
             const c = state.characters[id];

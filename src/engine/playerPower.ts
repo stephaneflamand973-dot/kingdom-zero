@@ -20,6 +20,7 @@ import type { ActionResult, Character, GameState, Organization } from './types';
 import { activeContract, jobOffer, signContract } from './contracts';
 import { businessesIn, charactersAt, clamp, fullName, hereSettlement, player, qty, roadPath, settlementIdOf } from './util';
 import { toDate } from './time';
+import { wearGear } from './gear';
 
 const ok = (message: string, minutes: number): ActionResult => ({ ok: true, message, minutes });
 const no = (message: string): ActionResult => ({ ok: false, message, minutes: 0 });
@@ -99,7 +100,9 @@ export function encounterAction(state: GameState, choice: EncounterChoice): Acti
   const log: string[] = [];
   const pf = fighterOf(p);
   const foes = enemyFighters(state);
-  const settle = () => { p.health = clamp(pf.hp, 0, 100); for (const f of foes) e.hp[f.id] = f.hp; };
+  const hp0 = pf.hp;
+  // l'arme s'use quand on frappe, l'armure quand on encaisse (phase 10)
+  const settle = () => { p.health = clamp(pf.hp, 0, 100); for (const f of foes) e.hp[f.id] = f.hp; e.log.push(...wearGear(state, p, choice === 'fight', pf.hp < hp0)); };
   const enemyVolley = () => { exchange(state, foes, [pf], log); /* l'adversaire frappe ; le joueur ne riposte pas */ };
 
   if (e.kind === 'bandits') {

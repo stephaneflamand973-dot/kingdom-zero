@@ -1,4 +1,4 @@
-# KINGDOM ZERO — Phase 9 (v0.9.0)
+# KINGDOM ZERO — Phase 10 (v0.10.0)
 
 Simulation de vie médiévale / RPG sandbox systémique. Le **pays de Valcendre** vit sans le joueur :
 trois localités reliées par des routes, environ 48 habitants qui travaillent, achètent, mangent, se lient
@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 146 tests automatisés (scénarios A–G, phases 2 à 9, invariants, fuzz) |
+| `npm test` | 153 tests automatisés (scénarios A–G, phases 2 à 10, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -71,6 +71,7 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
   quests.ts        requêtes nées de la simulation, rangs sociaux, chronique de la lignée (phase 7)
   career.ts        carrière : apprentissage, grades, promotions, augmentation (phase 8)
   perks.ts         atouts de départ choisis à la création du personnage (phase 9)
+  gear.ts          armes et armures forgées, usure, réparation ; train de vie (phase 10)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
   audio.ts         ambiance sonore procédurale (Web Audio, aucun fichier)
   a11y.ts, prefs.ts  fenêtres accessibles (focus, Échap), préférences (son, texte, mouvement, contraste)
@@ -538,6 +539,24 @@ propose « Charger une partie ».
 biens, maisons et affaires, et il est le premier proposé pour reprendre la lignée. Le testament s'efface à la
 succession : le nouveau chef de lignée rédige le sien.
 
+## Phase 10 — armes, armures et train de vie
+
+**Équipement** (`gear.ts`). Les forges du pays fabriquent trois armes (dague, épée courte, épée longue) et trois
+armures (gambison, cotte de mailles, harnois). Chaque pièce est forgée avec le **métal de la forge** : elle
+consomme réellement des outils de son stock (1 à 6), comptabilisés comme consommés, et se paie à la forge au
+cours de son métal plus la façon. Si la réserve est vide, il faut attendre qu'elle produise. L'équipement
+ajoute à l'attaque et à la défense en combat (embuscades, arrestations), **s'use** — l'arme quand on frappe,
+l'armure quand on encaisse — se répare à la forge et finit par se briser. Soldats et gardes reçoivent le
+fourniment de leur maison. L'onglet Personnage et la fenêtre de rencontre affichent attaque et défense.
+
+**Train de vie.** Frugal, modeste (5 d par jour), aisé (14 d) ou fastueux (32 d) : la somme est versée chaque
+jour aux commerçants de la localité où l'on se trouve (l'auberge d'abord), et améliore vie sociale et santé ;
+aisé ou fastueux, quelques habitants vous estiment davantage chaque lundi. Une bourse vide ramène à la
+frugalité. C'est aussi le remède à la thésaurisation : l'argent du joueur retourne au village.
+
+Les simulations de 16 ans restent sans mort de faim et aux bilans exacts ; le chômage moyen y varie de 4 à
+22 % selon le monde (les soldats mieux équipés changent le cours des combats, donc l'histoire de chaque monde).
+
 ## État réel du développement
 
 ### Implémenté et testé
@@ -585,7 +604,7 @@ les dialogues (le moteur restera l’autorité sur les faits).
   être attaqués par les brigands.
 - Le son est volontairement simple (synthèse) ; la vérification mesure qu'un signal est produit, pas sa
   qualité à l'oreille.
-- Pas encore d'armes ni d'armures (prévu) ; le joueur ne peut pas encore rejoindre la bande ni lever des troupes.
+- Le joueur ne peut pas encore rejoindre la bande ni lever des troupes ; les PNJ civils n'achètent pas d'armes.
 - Carrière : seul le joueur a des grades (les PNJ gardent un salaire unique par atelier). Un joueur qui
   thésaurise sans rien dépenser finit par assécher les caisses des ateliers, qui ne peuvent plus le payer :
   c'est la conséquence de l'économie fermée, visible surtout au pilote automatique.

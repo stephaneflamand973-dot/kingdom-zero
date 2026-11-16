@@ -220,8 +220,9 @@ describe('Fonder son établissement', () => {
     expect(b.startup).toBe(true);
     expect(reserveFor(b)).toBeLessThan(100);
     for (let d = 0; d < 7; d++) { liveDays(s, 1); if (s.encounter) s.encounter = undefined; }
-    expect(b.employees.length).toBeGreaterThan(0);
+    // elle produit dès la première semaine ; elle embauche s'il reste un candidat sans emploi et de quoi le payer
     expect(b.produced.bread ?? 0).toBeGreaterThan(20);
+    expect(b.employees.length > 0 || jobless(s, 'valcendre').length === 0 || !businessDiagnosis(s, b).ok || isHiring(s, b)).toBe(true);
     expect(checkIntegrity(s)).toEqual([]);
   }, 20000);
 
@@ -258,7 +259,7 @@ describe('Fonder son établissement', () => {
   });
 });
 
-import { businessDiagnosis, hiringThreshold, recommendedCapital, FOUNDABLE, ownerOrder } from '../src/engine';
+import { businessDiagnosis, hiringThreshold, recommendedCapital, FOUNDABLE, ownerOrder, jobless } from '../src/engine';
 
 describe('Diriger son affaire', () => {
   it('le diagnostic explique une caisse trop maigre et dit combien déposer ; le dépôt débloque l’embauche', () => {

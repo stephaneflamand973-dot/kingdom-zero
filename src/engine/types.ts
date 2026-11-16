@@ -100,7 +100,9 @@ export interface Character {
   /** Plus haut grade obtenu par métier (phase 8) : un maître le reste chez un nouveau patron. */
   gradeHeld?: Partial<Record<SkillId, 'apprenti' | 'compagnon' | 'maitre' | 'contremaitre'>>;
   traits: TraitId[];
-  perks?: PerkId[];        // atouts de départ du joueur (phase 9)
+  perks?: PerkId[];
+  gear?: Partial<Record<GearSlot, { id: GearId; wear: number }>>; // armes et armures (phase 10)
+  lifestyle?: Lifestyle;   // train de vie du joueur (phase 10)        // atouts de départ du joueur (phase 9)
   goal: Goal;
   relations: Record<string, Relation>;
   knownEvents: string[];    // ids d'événements que ce personnage connaît (croyances)
@@ -226,6 +228,9 @@ export interface Loan {
 /** Contrat de travail du joueur auprès d'un établissement. */
 export type PerkId = 'esprit_vif' | 'robuste' | 'beau_parleur' | 'bras_solides' | 'main_verte' | 'fils_d_artisan' | 'pecule' | 'bonne_etoile' | 'maitrise_double';
 export interface PlayerSetup { firstName: string; lastName: string; sex: 'M' | 'F'; age: number; perks: PerkId[] }
+export type GearId = 'dague' | 'epee' | 'epee_longue' | 'gambison' | 'cotte' | 'harnois';
+export type GearSlot = 'weapon' | 'armor';
+export type Lifestyle = 'frugal' | 'modeste' | 'aise' | 'fastueux';
 export type Grade = 'apprenti' | 'compagnon' | 'maitre' | 'contremaitre';
 export interface JobContract {
   id: string;

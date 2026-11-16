@@ -471,3 +471,9 @@ kbd { font-family: var(--serif); background: var(--wood-3); border: 1px solid va
 .demand.forte { background: rgba(127,176,105,.22); border-color: #557a45; }
 .demand.moyenne { background: rgba(227,168,59,.18); }
 .demand.faible { background: rgba(168,50,45,.25); border-color: #8e2b2b; }
+
+/* ── Phase 10 : équipement et train de vie ───────────────────── */
+.equip, .lifestyle { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: rgba(14,10,7,.3); }
+.equip-line { display: flex; gap: 14px; flex-wrap: wrap; font-size: .95rem; }
+.lifestyle { display: grid; gap: 6px; }
+.lifestyle select { font: inherit; padding: 6px 8px; background: var(--wood-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }

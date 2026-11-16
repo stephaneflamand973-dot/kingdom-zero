@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  designateHeir, heirOptions, tryForChild, PERKS,
+  designateHeir, heirOptions, tryForChild, PERKS, fighterOf, GEAR, LIFESTYLES, lifestyleOf, setLifestyle, type Lifestyle,
   acceptedQuests, openOffers, quests, QUEST_NAMES, socialRank, askRaise, careerStatus, GRADES, GRADE_NAMES, raiseChance,
   activeIncidents, INCIDENT_EFFECTS, INCIDENT_NAMES, toDate, residents, businessesIn, settlementIdOf, aliveCharacters, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
   activeContract, activeLoans, ambitionLabel, quitJob, repayLoan, reputationTags, orgList, landsOf, soldiersOf,
@@ -29,7 +29,7 @@ export function SidePanels({ game, onTalk, tab, onTab }: { game: Game; onTalk: (
         {TABS.map(t => <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}
       </nav>
       <div className="tab-body">
-        {tab === 'perso' && <Perso state={state} />}
+        {tab === 'perso' && <Perso state={state} game={game} />}
         {tab === 'famille' && <Famille game={game} onTalk={onTalk} />}
         {tab === 'inv' && <Inv state={state} />}
         {tab === 'affaires' && <Affaires game={game} />}
@@ -48,8 +48,10 @@ const GOALS: Record<string, string> = {
   prosperer: 'Faire prospérer son affaire', servir: 'Servir l’intendance',
 };
 
-function Perso({ state }: { state: GameState }) {
+function Perso({ state, game }: { state: GameState; game: Game }) {
   const p = state.characters[state.playerId];
+  const fighter = fighterOf(p);
+  const life = lifestyleOf(p);
   const rep = reputation(state, p.id);
   const tags = reputationTags(state, p.id);
   return (
@@ -60,6 +62,17 @@ function Perso({ state }: { state: GameState }) {
         <div className="rep"><div className="tb-sub">Réputation</div><strong>{reputationLabel(rep.score, rep.known)}</strong><div className="muted small">{rep.known} personne{rep.known > 1 ? 's' : ''} te connaissent</div></div>
       </div>
       <p className="goal">🎯 {GOALS[p.goal.kind]}{p.title ? ` · ${p.title === 'ecuyer' ? 'Écuyer' : 'Conseiller'}` : ''}</p>
+      <div className="equip">
+        <div className="equip-line"><span>⚔ {p.gear?.weapon ? `${GEAR[p.gear.weapon.id].name} (usure ${p.gear.weapon.wear}/${GEAR[p.gear.weapon.id].durability})` : 'Mains nues'}</span><span>🛡 {p.gear?.armor ? `${GEAR[p.gear.armor.id].name} (usure ${p.gear.armor.wear}/${GEAR[p.gear.armor.id].durability})` : 'Sans armure'}</span></div>
+        <div className="muted small">En combat : attaque {fighter.attack.toFixed(1)} · défense {fighter.defense.toFixed(1)}. Armes et armures se font forger dans une forge.</div>
+      </div>
+      <div className="lifestyle">
+        <label htmlFor="lifestyle"><b>Train de vie</b></label>
+        <select id="lifestyle" value={life} onChange={e => game.act(s => setLifestyle(s, e.target.value as Lifestyle))} disabled={!!state.gameOver}>
+          {(Object.keys(LIFESTYLES) as Lifestyle[]).map(k => <option key={k} value={k}>{LIFESTYLES[k].name} — {LIFESTYLES[k].cost} d par jour</option>)}
+        </select>
+        <div className="muted small">{LIFESTYLES[life].note}{life !== 'frugal' ? ` Chaque jour : vie sociale +${LIFESTYLES[life].social}, santé +${LIFESTYLES[life].health}${life === 'aise' || life === 'fastueux' ? ' ; chaque lundi, des habitants t’estiment davantage' : ''}. L’argent va aux commerçants du lieu.` : ''}</div>
+      </div>
       {tags.length > 0 && (
         <div className="tags" title="Ce que les habitants savent de toi, et combien le savent">
           {tags.map(t => <span key={t.tag} className={`tag ${t.good ? 'good' : 'bad'}`}>{t.tag} · {t.known}</span>)}
