@@ -4,6 +4,7 @@
 // franchie (résolution horaire), puis à chaque frontière de jour.
 // `processedHours` garantit qu'une heure n'est jamais simulée deux fois.
 // ─────────────────────────────────────────────────────────────
+import { dailyRetinue } from './warband';
 import { dailyLifestyle } from './gear';
 import { learningRate } from './career';
 import { cleanupQuests, dailyChronicle, dailyQuests } from './quests';
@@ -369,6 +370,7 @@ export function dayTick(state: GameState): void {
 
   // Phase 7 : requêtes des habitants et chronique de la lignée
   dailyLifestyle(state);
+  dailyRetinue(state);
   cleanupQuests(state);
   dailyQuests(state);
   dailyChronicle(state);

@@ -2,6 +2,7 @@
 // Noblesse et gouvernement (phase 4) : tribut, garnison, impôts, grogne et révoltes,
 // diplomatie entre maisons, guerres et conquêtes, complots, guilde des marchands.
 // ─────────────────────────────────────────────────────────────
+import { afterBattle, musteredFor } from './warband';
 import { applyWounds, autoBattle, fighterOf, strength } from './combat';
 import { P, reserveFor, transferMoney } from './economy';
 import { logEvent } from './events';
@@ -187,7 +188,8 @@ function warWeek(state: GameState): void {
   if (!war) return;
   const att = state.orgs[war.attackerId], def = state.orgs[war.defenderId];
   const target = state.settlements[war.targetSettlementId];
-  const A = soldiersOf(state, att), D = soldiersOf(state, def);
+  // le joueur peut avoir promis son épée et ses hommes à l'un des camps (phase 11)
+  const A = [...soldiersOf(state, att), ...musteredFor(state, att.id)], D = [...soldiersOf(state, def), ...musteredFor(state, def.id)];
   war.battles += 1;
   let winner: 'a' | 'b' | 'none';
   let dead: string[] = [];
@@ -205,6 +207,8 @@ function warWeek(state: GameState): void {
     text: `Bataille devant ${target.name} : ${A.length} soldats de ${att.name} contre ${D.length} de ${def.name}. ${winner === 'a' ? `${att.name} l'emporte` : winner === 'b' ? `${def.name} tient bon` : 'Aucun vainqueur'}${dead.length ? ` ; ${dead.length} mort${dead.length > 1 ? 's' : ''}` : ''}.`,
     witnesses: residents(state, target.id).map(c => c.id).concat(A.map(c => c.id), D.map(c => c.id)) });
   for (const id of dead) killCharacter(state, state.characters[id], 'au combat');
+  afterBattle(state, att.id, winner === 'a');
+  afterBattle(state, def.id, winner === 'b');
   // Issue
   if (war.victories.attacker >= 2) {
     war.status = 'ended';

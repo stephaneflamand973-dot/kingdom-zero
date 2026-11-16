@@ -1,4 +1,4 @@
-# KINGDOM ZERO — Phase 10 (v0.10.0)
+# KINGDOM ZERO — Phase 11 (v0.11.0)
 
 Simulation de vie médiévale / RPG sandbox systémique. Le **pays de Valcendre** vit sans le joueur :
 trois localités reliées par des routes, environ 48 habitants qui travaillent, achètent, mangent, se lient
@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 153 tests automatisés (scénarios A–G, phases 2 à 10, invariants, fuzz) |
+| `npm test` | 160 tests automatisés (scénarios A–G, phases 2 à 11, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -72,6 +72,7 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
   career.ts        carrière : apprentissage, grades, promotions, augmentation (phase 8)
   perks.ts         atouts de départ choisis à la création du personnage (phase 9)
   gear.ts          armes et armures forgées, usure, réparation ; train de vie (phase 10)
+  warband.ts       bande du joueur, embuscades de caravanes, hommes d'armes, batailles (phase 11)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
   audio.ts         ambiance sonore procédurale (Web Audio, aucun fichier)
   a11y.ts, prefs.ts  fenêtres accessibles (focus, Échap), préférences (son, texte, mouvement, contraste)
@@ -557,6 +558,28 @@ frugalité. C'est aussi le remède à la thésaurisation : l'argent du joueur re
 Les simulations de 16 ans restent sans mort de faim et aux bilans exacts ; le chômage moyen y varie de 4 à
 22 % selon le monde (les soldats mieux équipés changent le cours des combats, donc l'histoire de chaque monde).
 
+## Phase 11 — hors-la-loi et hommes d'armes
+
+**Rejoindre la bande** (`warband.ts`). Un membre des Loups qui vous apprécie (affinité 20, confiance 5) peut vous
+y faire entrer, depuis sa fenêtre de dialogue ; un homme titré ou un soldat de garnison ne le peut pas. Membre,
+on n'est plus rançonné par sa propre bande, on touche chaque lundi sa **part du trésor**, et l'on peut
+**guetter la route** six heures depuis la localité du repaire : si une caravane passe sur une route voisine, la
+bande l'attaque (combat réel avec deux compagnons contre le marchand et les patrouilles) ; la moitié de la
+cargaison part au butin de la bande, la moitié de la bourse du marchand à son trésor, dont 30 % pour vous tout
+de suite. Le marchand peut vous **reconnaître** sous le masque : avis de recherche (80 d de prime) et rancune
+durable. On peut quitter la bande, au prix de l'estime de ses anciens compagnons.
+
+**Hommes d'armes.** On engage un adulte valide sans emploi présent au même endroit (15 d de prime, puis 6 d par
+jour) : deux hommes sans titre, quatre pour un écuyer, six pour un conseiller. Ils suivent leur capitaine tant
+qu'ils n'ont ni faim ni sommeil, **dissuadent les brigands** (risque d'embuscade −20 % par homme, jusqu'à −70 %)
+et **combattent à ses côtés** lors d'une embuscade, au risque d'y être blessés ou tués. Sans solde, ils s'en vont.
+
+**Se battre pour une maison.** Quand une maison est en guerre, on peut promettre son épée à son seigneur : le
+joueur et ses hommes s'ajoutent à la prochaine bataille (avec le risque d'y mourir) ; la maison récompense
+ensuite (60 d en cas de victoire, 20 d sinon) et le seigneur s'en souvient. Le fait entre dans la chronique.
+
+Onglet **Pouvoir** : vos hommes d'armes, les habitants prêts à s'engager ici, votre bande et ses actions.
+
 ## État réel du développement
 
 ### Implémenté et testé
@@ -604,7 +627,8 @@ les dialogues (le moteur restera l’autorité sur les faits).
   être attaqués par les brigands.
 - Le son est volontairement simple (synthèse) ; la vérification mesure qu'un signal est produit, pas sa
   qualité à l'oreille.
-- Le joueur ne peut pas encore rejoindre la bande ni lever des troupes ; les PNJ civils n'achètent pas d'armes.
+- Le joueur ne peut pas devenir chef de la bande ni fonder sa propre maison noble ; les PNJ civils n'achètent pas d'armes ;
+  les hommes d'armes n'ont pas d'équipement propre (seulement leur valeur au combat).
 - Carrière : seul le joueur a des grades (les PNJ gardent un salaire unique par atelier). Un joueur qui
   thésaurise sans rien dépenser finit par assécher les caisses des ateliers, qui ne peuvent plus le payer :
   c'est la conséquence de l'économie fermée, visible surtout au pilote automatique.

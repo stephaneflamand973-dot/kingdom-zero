@@ -3,6 +3,7 @@
 // sur les routes, rançonne les commerces et saccage ceux qui refusent.
 // Les autorités n'en savent que ce que les victimes et les témoins rapportent.
 // ─────────────────────────────────────────────────────────────
+import { playerGangShare } from './warband';
 import { applyWounds, autoBattle, fighterOf } from './combat';
 import { ITEMS, ITEM_IDS } from './data';
 import { P, transferMoney } from './economy';
@@ -114,6 +115,7 @@ export function weeklyGangs(state: GameState): void {
       const each = Math.floor(pot / shares);
       for (const c of free) transferMoney(state, P.o(g.id), P.c(c.id), each * (c.id === leader.id ? 2 : 1));
     }
+    playerGangShare(state, g); // phase 11 : le joueur membre touche sa part
   }
 }
 

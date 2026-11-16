@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  gangContact, joinGang, recruitsHere, hireManAtArms, dismissManAtArms, retinue, retinueCap, RETINUE_BOUNTY, RETINUE_PAY, muster, activeWar,
   acceptQuest, completeQuest, declineQuest, offerFrom, questActionsWith,
   court, kin, proposeMarriage, houseLedBy, petition, orgsOf, wantedFor, type PetitionKind,
   activeLoans, ambitionLabel, askLoan, businessInTrouble, canTalk, employerOf, fullName, getRelation, greeting, lendMoney, loanTerms,
@@ -79,6 +80,14 @@ export function NpcDialog({ game, npcId, onClose }: { game: Game; npcId: string;
               })}
             </div>
             <QuestBox game={game} npcId={npcId} run={run} />
+            {(gangContact(state, npcId) || recruitsHere(state).some(c => c.id === npcId) || n.captainId === p.id) && (<>
+              <h3 className="dialog-sub">Entre nous</h3>
+              <div className="talk-grid">
+                {gangContact(state, npcId) && <button className="btn danger" disabled={!!state.gameOver} onClick={() => run(s => joinGang(s, npcId))}>Demander à rejoindre {gangContact(state, npcId)!.name}<small>{n.firstName} te fait confiance · vie de hors-la-loi</small></button>}
+                {recruitsHere(state).some(c => c.id === npcId) && <button className="btn ghost" disabled={!!state.gameOver || retinue(state).length >= retinueCap(p)} onClick={() => run(s => hireManAtArms(s, npcId))}>Engager comme homme d’armes<small>{RETINUE_BOUNTY} d de prime, {RETINUE_PAY} d par jour</small></button>}
+                {n.captainId === p.id && <button className="btn ghost" onClick={() => run(s => dismissManAtArms(s, npcId))}>Congédier<small>il retourne à la vie civile</small></button>}
+              </div>
+            </>)}
             {houseLedBy(state, n.id) && <LordRequests game={game} lordId={n.id} run={run} />}
             {n.age >= 16 && p.age >= 16 && !kin(state, p, n) && (
               <>
@@ -135,6 +144,7 @@ function LordRequests({ game, lordId, run }: { game: Game; lordId: string; run: 
         {reqs.filter(r => r.show).map(r => (
           <button key={r.k} className="btn ghost" disabled={!!state.gameOver} onClick={() => run(s => petition(s, lordId, r.k))}>{r.label}<small>{r.hint}</small></button>
         ))}
+        {activeWar(state, house.id) && <button className="btn" disabled={!!state.gameOver || state.muster?.houseId === house.id} onClick={() => run(s => muster(s, house.id))}>Promettre ton épée pour la bataille<small>{state.muster?.houseId === house.id ? 'promesse donnée' : `toi et tes ${retinue(state).length} homme(s) d’armes, lundi`}</small></button>}
       </div>
     </>
   );

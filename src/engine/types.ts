@@ -102,6 +102,7 @@ export interface Character {
   traits: TraitId[];
   perks?: PerkId[];
   gear?: Partial<Record<GearSlot, { id: GearId; wear: number }>>; // armes et armures (phase 10)
+  captainId?: string;      // homme d'armes au service de ce capitaine (phase 11)
   lifestyle?: Lifestyle;   // train de vie du joueur (phase 10)        // atouts de départ du joueur (phase 9)
   goal: Goal;
   relations: Record<string, Relation>;
@@ -446,6 +447,8 @@ export interface GameState {
   gameOver?: string;
   /** Convois de grain en route (phase 6) : la cargaison existe physiquement pendant le trajet. */
   convoys?: GrainConvoy[];
+  /** Promesse du joueur de combattre pour une maison à la prochaine bataille (phase 11). */
+  muster?: { houseId: string; day: number };
   /** Requêtes des habitants (phase 7). */
   quests?: Quest[];
   /** Chronique de la lignée du joueur (phase 7). */

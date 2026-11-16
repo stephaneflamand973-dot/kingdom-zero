@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  gangOf, retinue, retinueCap, recruitsHere, hireManAtArms, dismissManAtArms, gangRaid, leaveGang, RETINUE_BOUNTY, RETINUE_PAY,
   designateHeir, heirOptions, tryForChild, PERKS, fighterOf, GEAR, LIFESTYLES, lifestyleOf, setLifestyle, type Lifestyle,
   acceptedQuests, openOffers, quests, QUEST_NAMES, socialRank, askRaise, careerStatus, GRADES, GRADE_NAMES, raiseChance,
   activeIncidents, INCIDENT_EFFECTS, INCIDENT_NAMES, toDate, residents, businessesIn, settlementIdOf, aliveCharacters, ATTR_NAMES, formatClock, formatDate, fullName, getEvent, getRelation, ITEMS, ITEM_ICON, ITEM_IDS,
@@ -36,7 +37,7 @@ export function SidePanels({ game, onTalk, tab, onTab }: { game: Game; onTalk: (
         {tab === 'rel' && <Rel state={state} onTalk={onTalk} />}
         {tab === 'journal' && <Journal state={state} />}
         {tab === 'monde' && <Monde state={state} />}
-        {tab === 'pouvoir' && <Pouvoir state={state} />}
+        {tab === 'pouvoir' && <Pouvoir state={state} game={game} />}
         {tab === 'requetes' && <Requetes state={state} onTalk={onTalk} />}
       </div>
     </section>
@@ -335,8 +336,13 @@ function Monde({ state }: { state: GameState }) {
   );
 }
 
-function Pouvoir({ state }: { state: GameState }) {
+function Pouvoir({ state, game }: { state: GameState; game: Game }) {
   const p = state.characters[state.playerId];
+  const { act } = game;
+  const myGang = gangOf(state);
+  const men = retinue(state);
+  const recruits = recruitsHere(state);
+  const over = !!state.gameOver;
   const houses = orgList(state, 'house');
   const known = p.knownEvents.map(id => getEvent(state, id)).filter((e): e is WorldEvent => !!e);
   const gangIds = new Set(known.filter(e => (e.type === 'ambush' || e.type === 'racket' || e.type === 'vandalism' || e.type === 'recruit') && e.data?.gang).map(e => String(e.data!.gang)));
@@ -346,6 +352,32 @@ function Pouvoir({ state }: { state: GameState }) {
   return (
     <div className="pouvoir">
       {myOrgs.length > 0 && <p className="goal">Ton rang : {myOrgs.map(o => `${({ seigneur: 'seigneur', heritier: 'héritier', soldat: 'soldat', vassal: 'vassal', conseiller: 'conseiller', chef: 'chef', membre: 'membre' } as Record<string, string>)[o.roles[p.id]]} de ${o.name}`).join(', ')}</p>}
+      <h4>Tes hommes d’armes ({men.length}/{retinueCap(p)})</h4>
+      {men.length === 0 && <p className="muted small">Aucun. Engage un adulte sans emploi présent au même endroit que toi : {RETINUE_BOUNTY} d de prime, puis {RETINUE_PAY} d par jour. Tes hommes te suivent, se battent à tes côtés et dissuadent les brigands. Un écuyer en mène quatre, un conseiller six.</p>}
+      {men.length > 0 && <p className="muted small">Solde : {men.length * RETINUE_PAY} d par jour. Sans solde, ils s’en vont. En embuscade, ceux qui sont près de toi combattent avec toi.</p>}
+      <ul className="rel-list">
+        {men.map(c => (
+          <li key={c.id}><div className="rel-row-head"><b>{fullName(c)}</b><span className="muted small">santé {Math.round(c.health)} · combat {c.skills.combat} · {state.locations[c.locationId]?.name}</span>
+            <button className="btn sm ghost" disabled={over} onClick={() => act(s => dismissManAtArms(s, c.id))}>Congédier</button></div></li>
+        ))}
+      </ul>
+      {recruits.length > 0 && men.length < retinueCap(p) && (<>
+        <p className="small">Prêts à s’engager, ici :</p>
+        <ul className="rel-list">
+          {recruits.slice(0, 5).map(c => (
+            <li key={c.id}><div className="rel-row-head"><b>{fullName(c)}</b><span className="muted small">{c.age} ans · combat {c.skills.combat}</span>
+              <button className="btn sm" disabled={over || p.money < RETINUE_BOUNTY + RETINUE_PAY} onClick={() => act(s => hireManAtArms(s, c.id))}>Engager ({RETINUE_BOUNTY} d)</button></div></li>
+          ))}
+        </ul>
+      </>)}
+      {myGang && (<>
+        <h4>Ta bande : {myGang.name}</h4>
+        <p className="muted small">{myGang.members.length} membres · trésor {myGang.treasury} d · recherchée {myGang.heat >= 70 ? 'activement' : myGang.heat >= 30 ? 'un peu' : 'à peine'}. Ta part du butin tombe chaque lundi. Repaire : {state.settlements[myGang.seatId]?.name}.</p>
+        <div className="save-row">
+          <button className="btn sm danger" disabled={over} onClick={() => act(gangRaid)} title="6 h · si une caravane passe sur une route voisine du repaire, la bande l’attaque">Guetter la route (6 h)</button>
+          <button className="btn sm ghost" disabled={over} onClick={() => act(leaveGang)}>Quitter la bande</button>
+        </div>
+      </>)}
       <h4>Avis de recherche</h4>
       {state.wanted.length === 0 && <p className="muted small">Personne n’est recherché.</p>}
       <ul className="rel-list">

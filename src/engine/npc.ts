@@ -4,6 +4,7 @@
 // 3) noter les actions réalisables, 4) exécuter la meilleure,
 // 5) modifier l'état du PNJ et des entités touchées.
 // ─────────────────────────────────────────────────────────────
+import { followsCaptain } from './warband';
 import { ITEM_IDS, ITEMS } from './data';
 import { attemptTheft } from './crime';
 import { askPrice, hireBest, isHiring, outputCap, P, priceForCharacter, sellersOf, trade, tradeRefusal, transferItem, transferMoney } from './economy';
@@ -59,6 +60,7 @@ interface Option { score: number; run: () => void }
 export function npcDecide(state: GameState, c: Character, hour: number, weekday: number, allowPlayer = false): void {
   if (!c.alive || (c.isPlayer && !allowPlayer)) return;
   if ((c.jailedUntil ?? 0) > state.time) return; // en prison : rien à décider
+  if (c.captainId && followsCaptain(state, c, hour)) return; // homme d'armes : il escorte son capitaine (phase 11)
   // En voyage (caravane) : le trajet occupe la personne jusqu'à l'arrivée
   if (c.activity.kind === 'travel' && (c.activity.until ?? 0) > state.time) {
     if (c.needs.hunger >= 40) eat(state, c); // on mange ses provisions en chemin

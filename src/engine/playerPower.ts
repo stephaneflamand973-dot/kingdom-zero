@@ -21,6 +21,7 @@ import { activeContract, jobOffer, signContract } from './contracts';
 import { businessesIn, charactersAt, clamp, fullName, hereSettlement, player, qty, roadPath, settlementIdOf } from './util';
 import { toDate } from './time';
 import { wearGear } from './gear';
+import { alliesAtHand, escortFactor } from './warband';
 
 const ok = (message: string, minutes: number): ActionResult => ({ ok: true, message, minutes });
 const no = (message: string): ActionResult => ({ ok: false, message, minutes: 0 });
@@ -37,7 +38,9 @@ export function rollTravelAmbush(state: GameState, from: string, to: string, min
   const p = player(state);
   let elapsed = 0;
   for (const road of path.roads) {
-    const risk = ambushRisk(state, road) * (p.perks?.includes('bonne_etoile') ? 0.5 : 1);
+    // on n'est pas rançonné par sa propre bande, et une escorte dissuade (phase 11)
+    const ownGang = gangsOnRoad(state, road).length > 0 && gangsOnRoad(state, road).every(g => g.members.includes(p.id));
+    const risk = ownGang ? 0 : ambushRisk(state, road) * (p.perks?.includes('bonne_etoile') ? 0.5 : 1) * escortFactor(state);
     const pAmbush = 1 - Math.pow(1 - risk, road.hours);
     if (risk > 0 && rand(state) < pAmbush) {
       const gang = gangsOnRoad(state, road).find(g => freeMembers(state, g).length >= 2)!;
@@ -48,6 +51,8 @@ export function rollTravelAmbush(state: GameState, from: string, to: string, min
       advanceTime(state, until);
       p.locationId = road.locationId;
       for (const b of bandits) { b.locationId = road.locationId; b.activity = { kind: 'ambush', locationId: road.locationId, since: state.time, note: 'Guette sur la route' }; }
+      // les hommes d'armes du joueur sont à ses côtés
+      for (const a of alliesAtHand(state)) { a.locationId = road.locationId; a.activity = { kind: 'patrol', locationId: road.locationId, since: state.time, note: `Escorte ${fullName(p)}` }; }
       const demand = Math.max(10, Math.floor(p.money * 0.6));
       state.encounter = {
         kind: 'bandits', enemies: bandits.map(b => b.id), hp: Object.fromEntries(bandits.map(b => [b.id, Math.round(b.health)])),
@@ -148,7 +153,11 @@ export function encounterAction(state: GameState, choice: EncounterChoice): Acti
         return checkPlayerDown(state, `Ils te rattrapent ! ${log.join(' ')}`);
       }
       case 'fight': {
-        exchange(state, [pf], foes, log); settle();
+        // les hommes d'armes présents frappent avec le joueur et encaissent avec lui (phase 11)
+        const allies = alliesAtHand(state).filter(a => a.locationId === p.locationId);
+        const af = allies.map(fighterOf);
+        exchange(state, [pf, ...af], foes, log); settle();
+        for (const id of applyWounds(state, af, 0.15)) killCharacter(state, state.characters[id], 'en défendant son capitaine');
         e.log.push(...log);
         const left = foes.reduce((s, f) => s + f.hp, 0);
         if (left <= startHp(state) * 0.5 || foes.every(f => f.hp === 0)) return banditsRouted(state, foes, log);

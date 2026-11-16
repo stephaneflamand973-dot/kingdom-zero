@@ -32,4 +32,5 @@ export * from './quests';
 export * from './career';
 export * from './perks';
 export * from './gear';
+export * from './warband';
 export { chooseTavern } from './npc';
