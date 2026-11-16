@@ -1,4 +1,4 @@
-import { liveDays, orgsOf, patrol, festivalAt, festivalTonight, feastDrink, drinkAle, eat, forage, formatClock, minutesUntilHour, qty, sleep, sleepOptions, toDate, train, wait } from '../engine';
+import { enterTourney, settlementIdOf, TOURNEY_FEE, tourneyOpen, upcomingTourney, liveDays, orgsOf, patrol, festivalAt, festivalTonight, feastDrink, drinkAle, eat, forage, formatClock, minutesUntilHour, qty, sleep, sleepOptions, toDate, train, wait } from '../engine';
 import { goals } from './HelpModal';
 import type { Game } from './useGame';
 
@@ -35,6 +35,7 @@ export function ActionPanel({ game, showGuide = true, onHelp }: { game: Game; sh
           <button className="btn" disabled={over || food < 1} onClick={() => act(eat)} title="15 min · touche M" aria-keyshortcuts="M">🍞 Manger <small>{food}</small><Kbd k="M" /></button>
           <button className="btn" disabled={over || qty(p.inventory, 'ale') < 1} onClick={() => act(drinkAle)} title="20 min · touche B" aria-keyshortcuts="B">🍺 Boire<Kbd k="B" /></button>
           {loc.kind === 'tavern' && festivalTonight(state, loc.id) && <button className="btn feast" disabled={over} onClick={() => act(feastDrink)} title="30 min · chope offerte">🎉 Trinquer à la fête</button>}
+          {(() => { const t = upcomingTourney(state, settlementIdOf(state, p.locationId)); return t && tourneyOpen(state, t) ? <button className="btn" disabled={over || p.money < TOURNEY_FEE} onClick={() => act(enterTourney)} title={`Tournoi : ${t.purse} d au vainqueur, plus les droits`}>⚔ Entrer en lice ({TOURNEY_FEE} d)</button> : null; })()}
           {orgsOf(state, p.id, 'house').some(h => h.roles[p.id] === 'soldat') && (loc.kind === 'square' || loc.kind === 'road') && <button className="btn" disabled={over} onClick={() => act(s => patrol(s, 4))} title="4 h · service de la garnison">🛡 Patrouiller (4 h)</button>}
           {loc.kind === 'woodlot' && <button className="btn" disabled={over} onClick={() => act(s => forage(s, 3))} title="3 h · Agriculture">🪵 Ramasser du bois (3 h)</button>}
           {loc.kind === 'woodlot' && <button className="btn" disabled={over} onClick={() => act(s => forage(s, 3, 'grain'))} title="3 h · racines, baies et glands : maigre pitance, surtout l’hiver">🌰 Cueillir (3 h)</button>}

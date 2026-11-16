@@ -33,4 +33,6 @@ export * from './career';
 export * from './perks';
 export * from './gear';
 export * from './warband';
+export * from './fief';
+export * from './tourney';
 export { chooseTavern } from './npc';

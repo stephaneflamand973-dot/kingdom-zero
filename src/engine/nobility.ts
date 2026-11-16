@@ -3,6 +3,7 @@
 // diplomatie entre maisons, guerres et conquêtes, complots, guilde des marchands.
 // ─────────────────────────────────────────────────────────────
 import { afterBattle, musteredFor, ownHost } from './warband';
+import { audienceRelief, npcWorks } from './fief';
 import { applyWounds, autoBattle, fighterOf, strength } from './combat';
 import { P, reserveFor, transferMoney } from './economy';
 import { logEvent } from './events';
@@ -14,7 +15,7 @@ import { killCharacter } from './sim';
 import { modifyRelation } from './social';
 import { toDate } from './time';
 import type { Character, GameState, Organization, Settlement, War } from './types';
-import { aliveCharacters, businessesIn, fullName, hasTrait, manorOf, newId, residents, roadPath, settlementIdOf } from './util';
+import { aliveCharacters, businessesIn, fullName, hasTrait, hasWork, manorOf, newId, residents, roadPath, settlementIdOf } from './util';
 
 export const SOLDIER_PAY = 40;
 
@@ -45,7 +46,8 @@ export function computeUnrest(state: GameState, st: Settlement): number {
   const conquest = state.wars.filter(w => w.targetSettlementId === st.id && w.attackerId === st.lordHouseId && w.outcome?.includes('empare')).map(w => w.endDay ?? 0).sort((a, b) => b - a)[0];
   const claimed = orgList(state, 'house').some(h => h.claimId === st.id && h.id !== st.lordHouseId && h.leaderId && state.characters[h.leaderId]?.alive);
   const yoke = claimed && conquest !== undefined && day - conquest < 224 ? Math.round(30 * (1 - (day - conquest) / 224)) : 0;
-  const v = hunger * 0.35 + st.taxRate * 250 + Math.min(20, crimes * 1.5) + (100 - st.prosperity) * 0.25 + war + yoke;
+  const v = hunger * 0.35 + st.taxRate * 250 + Math.min(20, crimes * 1.5) + (100 - st.prosperity) * 0.25 + war + yoke
+    - (hasWork(state, st.id, 'chapelle') ? 8 : 0) - audienceRelief(state, st); // chapelle, audience (phase 12)
   return Math.round(Math.max(0, Math.min(100, v)));
 }
 
@@ -128,7 +130,8 @@ export function weeklyGovernance(state: GameState): void {
       st.unrest = computeUnrest(state, st);
       st.unrestWeeks = st.unrest >= 70 ? st.unrestWeeks + 1 : 0;
       const old = st.taxRate;
-      if (st.unrest >= 60 && st.taxRate > 0.02) st.taxRate = Math.round((st.taxRate - 0.01) * 100) / 100;
+      if (lord.isPlayer) { /* le joueur fixe lui-même l'impôt de ses terres (phase 12) */ }
+      else if (st.unrest >= 60 && st.taxRate > 0.02) st.taxRate = Math.round((st.taxRate - 0.01) * 100) / 100;
       else if (house.treasury < 150 && st.unrest < 40 && st.taxRate < 0.12 && !hasTrait(lord, 'genereux')) st.taxRate = Math.round((st.taxRate + (activeWar(state, house.id) ? 0.02 : 0.01)) * 100) / 100;
       if (st.taxRate !== old) {
         logEvent(state, { type: 'tax_change', actorId: lord.id, locationId: st.squareId, importance: 2,
@@ -147,6 +150,7 @@ export function weeklyGovernance(state: GameState): void {
       }
     }
   }
+  npcWorks(state);
   diplomacy(state);
   // une maison exilée tente de reprendre sa terre, au début d'une saison sur deux environ (phase 11)
   if (toDate(state.time).dayOfSeason <= 7 && !activeWar(state)) {
@@ -243,6 +247,8 @@ function warWeek(state: GameState): void {
   else if (!A.length) winner = 'b';
   else {
     const fa = A.map(fighterOf), fd = D.map(fighterOf);
+    // une palissade protège ceux qui défendent leur propre localité (phase 12)
+    if (target.lordHouseId === def.id && hasWork(state, target.id, 'palissade')) for (const f of fd) f.defense += 3;
     const hpA0 = fa.reduce((s, f) => s + f.hp, 0), hpD0 = fd.reduce((s, f) => s + f.hp, 0);
     winner = autoBattle(state, fa, fd, 8).winner;
     // une journée indécise se juge à qui a le mieux tenu le terrain (phase 11)

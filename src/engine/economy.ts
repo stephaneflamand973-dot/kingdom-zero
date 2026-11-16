@@ -8,7 +8,7 @@ import { ITEMS, RECIPES, TOOL_WEAR_PER_TOOL, PROFESSION_BY_BUSINESS, WORK_SKILL 
 import { logEvent } from './events';
 import { SEASON_YIELD, toDate } from './time';
 import type { Business, Character, GameState, Inventory, ItemId } from './types';
-import { addItem, allBusinesses, clamp, fullName, hasTrait, isOpen, ownerName, qty , businessesIn, businessSettlement, hereSettlement, settlementIdOf } from './util';
+import { addItem, allBusinesses, clamp, fullName, hasTrait, isOpen, ownerName, qty , businessesIn, businessSettlement, hereSettlement, settlementIdOf, hasWork } from './util';
 import { getRelation, modifyRelation } from './social';
 
 export type Party = { t: 'c' | 'b' | 'o'; id: string };
@@ -146,7 +146,8 @@ export function runProduction(state: GameState, b: Business): number {
   if (!r) return 0;
   const d = toDate(state.time);
   // Saison (pour les cultures) et spécialisation de la localité (terres, filons)
-  const mult = (r.seasonal ? SEASON_YIELD[d.season] : 1) * (businessSettlement(state, b).yields[b.kind] ?? 1) * incidentYield(state, b);
+  const mult = (r.seasonal ? SEASON_YIELD[d.season] : 1) * (businessSettlement(state, b).yields[b.kind] ?? 1) * incidentYield(state, b)
+    * ((b.kind === 'farm' || b.kind === 'bakery') && hasWork(state, businessSettlement(state, b).id, 'moulin') ? 1.15 : 1); // moulin banal (phase 12)
   const effLabor = r.labor / mult;
   let batches = 0;
   while (b.laborPool >= effLabor) {

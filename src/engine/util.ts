@@ -1,3 +1,4 @@
+import { toDate } from './time';
 import type { Business, Character, GameState, Inventory, ItemId, Location, Road, Settlement } from './types';
 
 export const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
@@ -140,3 +141,11 @@ export function ownedBusiness(state: GameState, c: Character): Business | undefi
 }
 
 export function hasTrait(c: Character, t: Character['traits'][number]): boolean { return c.traits.includes(t); }
+
+/** Aménagement achevé dans une localité (phase 12). */
+export function hasWork(state: GameState, settlementId: string, id: import('./types').WorkId): boolean {
+  const st = state.settlements[settlementId];
+  if (!st?.works) return false;
+  const day = toDate(state.time).day;
+  return st.works.some(w => w.id === id && w.ready <= day);
+}

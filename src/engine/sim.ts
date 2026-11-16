@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 import { dissolve } from './orgs';
 import { dailyRetinue } from './warband';
-import { dailyLifestyle } from './gear';
+import { dailyLifestyle, weeklyArming } from './gear';
 import { learningRate } from './career';
 import { cleanupQuests, dailyChronicle, dailyQuests } from './quests';
 import { npcApproaches } from './approaches';
@@ -21,7 +21,7 @@ import { gainXp } from './skills';
 import { modifyRelation, socialHour } from './social';
 import { MIN_PER_DAY, MIN_PER_HOUR, START_OFFSET_MIN, toDate, DAYS_PER_YEAR } from './time';
 import type { Character, GameState, Inventory, ItemId } from './types';
-import { addItem, aliveCharacters, allBusinesses, businessesIn, businessSettlement, clamp, fullName, hasTrait, hereSettlement, homeSettlement, locationsIn, manorOf, newId, npcs, qty, residents, settlementIdOf } from './util';
+import { addItem, aliveCharacters, allBusinesses, businessesIn, businessSettlement, clamp, fullName, hasTrait, hereSettlement, homeSettlement, locationsIn, manorOf, newId, npcs, qty, residents, settlementIdOf, hasWork } from './util';
 import { merchantsPlanTrips, processCaravans } from './trade';
 import { collectRents } from './property';
 import { weeklyTerritories } from './territory';
@@ -32,6 +32,7 @@ import { monthlyIntrigues, weeklyGovernance } from './nobility';
 import { birthdays, dailyFamily, dailyServants, feedChildren, settleEstate, successionCandidates, weeklyCourtship } from './family';
 import { npcBorrowing, ownedBusinesses, processLoans } from './finance';
 import { merchantFulfils, postOrder, processOrders, weeklyContractReview } from './contracts';
+import { announceTourneys, hourlyTourneys } from './tourney';
 import { festivalTonight, initialAmbition, jobHopping, processAmbitions, startFestivals, trySlander } from './society';
 import { ITEM_IDS } from './data';
 
@@ -170,7 +171,8 @@ export function hourTick(state: GameState): void {
   }
   if (d.hour === 7 || d.hour === 13) for (const b of allBusinesses(state)) manageBusiness(state, b, d.hour === 13);
   if (d.hour === 13) merchantFulfils(state);
-  if (d.hour === 17 && d.dayOfSeason === 1) startFestivals(state);
+  if (d.hour === 17 && d.dayOfSeason === 1) { startFestivals(state); announceTourneys(state); }
+  hourlyTourneys(state); // tournois de saison (phase 12)
   // Phase 3 : caravanes en route et départs des marchands ; phase 4 : brigands et justice
   caravanAmbushes(state);
   processCaravans(state);
@@ -268,7 +270,7 @@ export function dayTick(state: GameState): void {
   // Routes et bâtiments s'usent
   for (const sid of state.settlementOrder) {
     const st = state.settlements[sid];
-    st.infrastructure = clamp(st.infrastructure - 0.3, 0, 100);
+    st.infrastructure = clamp(st.infrastructure - (hasWork(state, sid, 'paves') ? 0.15 : 0.3), 0, 100); // chemins pavés (phase 12)
     // Corvée (phase 6) : quand les chemins se dégradent, les adultes sans emploi doivent quelques heures
     // d'entretien à la communauté (sans salaire, au prix de leur fatigue)
     if (st.infrastructure < 60) {
@@ -355,6 +357,7 @@ export function dayTick(state: GameState): void {
     weeklyPatronage(state);
     weeklyStewardship(state);
     weeklyPublicWorks(state);
+    weeklyArming(state);
     for (const sid of state.settlementOrder) grainConvoy(state, sid, true);
   }
 

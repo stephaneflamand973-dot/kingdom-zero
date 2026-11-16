@@ -2,7 +2,8 @@
 // Actions de pouvoir du joueur (phase 4) : embuscades et arrestations au tour par tour,
 // requêtes auprès des seigneurs, service dans la garnison, dénonciations.
 // ─────────────────────────────────────────────────────────────
-import { applyWounds, exchange, fighterOf, type Fighter } from './combat';
+import { applyStance, applyWounds, exchange, fighterOf, type Fighter, type Stance } from './combat';
+import { boutAction } from './tourney';
 import { ITEMS, ITEM_IDS } from './data';
 import { P, transferItem, transferMoney } from './economy';
 import { getEvent, logEvent } from './events';
@@ -94,17 +95,26 @@ function endEncounter(state: GameState, continueJourney: boolean): number {
   return 0;
 }
 
-export type EncounterChoice = 'fight' | 'flee' | 'pay' | 'parley' | 'surrender';
+export type EncounterChoice = 'fight' | 'strike' | 'guard' | 'feint' | 'flee' | 'pay' | 'parley' | 'surrender';
 
-export function encounterAction(state: GameState, choice: EncounterChoice): ActionResult {
+export function encounterAction(state: GameState, choice0: EncounterChoice): ActionResult {
   if (state.gameOver) return no('La partie est terminée.');
   const e = state.encounter;
   if (!e) return no('Aucune rencontre en cours.');
+  // assaut de tournoi (phase 12)
+  if (e.kind === 'duel') {
+    if (choice0 === 'flee' || choice0 === 'pay' || choice0 === 'parley') return no('En lice, on se bat ou l’on cède l’assaut.');
+    return boutAction(state, choice0);
+  }
   const p = player(state);
   e.round += 1;
   const log: string[] = [];
   const pf = fighterOf(p);
   const foes = enemyFighters(state);
+  // posture choisie pour ce tour (phase 12) : toutes reviennent à se battre
+  const stance: Stance | undefined = choice0 === 'fight' || choice0 === 'strike' || choice0 === 'guard' || choice0 === 'feint' ? choice0 : undefined;
+  const choice: 'fight' | 'flee' | 'pay' | 'parley' | 'surrender' = stance ? 'fight' : choice0 as 'flee' | 'pay' | 'parley' | 'surrender';
+  if (stance && stance !== 'fight') applyStance(state, pf, p, stance, e.enemies.map(id => state.characters[id]), log);
   const hp0 = pf.hp;
   // l'arme s'use quand on frappe, l'armure quand on encaisse (phase 10)
   const settle = () => { p.health = clamp(pf.hp, 0, 100); for (const f of foes) e.hp[f.id] = f.hp; e.log.push(...wearGear(state, p, choice === 'fight', pf.hp < hp0)); };

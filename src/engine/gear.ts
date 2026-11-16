@@ -33,7 +33,8 @@ export function gearBonus(c: Character): { attack: number; defense: number } {
     const g = c.gear?.[slot];
     if (g) { attack += GEAR[g.id].attack; defense += GEAR[g.id].defense; }
   }
-  if (!c.gear?.weapon && !c.gear?.armor && (c.profession === 'soldat' || c.profession === 'garde')) { attack += 4; defense += 3; }
+  // fourniment de la maison : il couvre ce que le soldat n'a pas acheté lui-même (phase 12 : pièce par pièce)
+  if (c.profession === 'soldat' || c.profession === 'garde') { if (!c.gear?.weapon) attack += 4; if (!c.gear?.armor) defense += 3; }
   return { attack, defense };
 }
 
@@ -169,5 +170,40 @@ export function dailyLifestyle(state: GameState): void {
     const folk = residents(state, sid).filter(c => c.age >= 14 && c.id !== p.id);
     for (let i = 0; i < Math.min(n, folk.length); i++) modifyRelation(state, folk[(day * 7 + i * 5) % folk.length].id, p.id, l === 'fastueux' ? 3 : 2, 1);
     for (const t of taverns) if (t.ownerId) modifyRelation(state, t.ownerId, p.id, 2, 2);
+  }
+}
+
+// ── Les PNJ s'équipent (phase 12) ───────────────────────────
+
+/**
+ * Chaque lundi, soldats et gardes qui ont de l'épargne se font forger ce qui leur manque
+ * (le fourniment de la maison est médiocre), et les marchands qui courent les routes une dague.
+ * Le métal est tiré du stock de la forge et payé à son juste prix.
+ */
+export function weeklyArming(state: GameState): void {
+  for (const sid of state.settlementOrder) {
+    const forge = businessesIn(state, sid).filter(b => b.kind === 'forge').sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+    if (!forge) continue;
+    let sold = 0;
+    for (const c of residents(state, sid).filter(c => !c.isPlayer).sort((a, b) => (a.id < b.id ? -1 : 1))) {
+      if (sold >= 2) break; // la forge ne façonne que deux pièces par semaine pour les gens du lieu
+      if (c.id === forge.ownerId || c.employerId === forge.id) continue;
+      const fighter = c.profession === 'soldat' || c.profession === 'garde';
+      const want: GearId | undefined = fighter
+        ? (!c.gear?.armor ? 'gambison' : !c.gear?.weapon ? 'epee' : c.gear.armor.id === 'gambison' && c.money > 200 ? 'cotte' : undefined)
+        : c.profession === 'marchand' && !c.gear?.weapon ? 'dague' : undefined;
+      if (!want) continue;
+      const g = GEAR[want];
+      if (qty(forge.stock, 'tools') < g.units + 1) break; // on garde au moins un outil pour l'atelier
+      const price = gearPrice(state, forge, want);
+      if (c.money < price + 40) continue;
+      transferMoney(state, P.c(c.id), P.b(forge.id), price);
+      addItem(forge.stock, 'tools', -g.units);
+      addItem(state.ledger.consumed, 'tools', g.units);
+      (c.gear ??= {})[g.slot] = { id: want, wear: 0 };
+      sold++;
+      logEvent(state, { type: 'trade', actorId: c.id, businessId: forge.id, locationId: forge.locationId, importance: 1,
+        text: `${fullName(c)} se fait forger ${g.name.toLowerCase()} à ${forge.name} (${price} d).`, witnesses: forge.ownerId ? [forge.ownerId, c.id] : [c.id] });
+    }
   }
 }

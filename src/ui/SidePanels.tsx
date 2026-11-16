@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  WORKS, WORK_IDS, TAX_MIN, TAX_MAX, setFiefTax, buildWork, holdAudience, computeUnrest, upcomingTourney, tourneyOpen, enterTourney, tourneyName, TOURNEY_FEE,
   houseOfPlayer, HOUSE_FOUNDING, foundHouse, houseTreasury, warTargets, declareWar, challengeGangLeader, activeWar,
   gangOf, retinue, retinueCap, recruitsHere, hireManAtArms, dismissManAtArms, gangRaid, leaveGang, RETINUE_BOUNTY, RETINUE_PAY,
   designateHeir, heirOptions, tryForChild, PERKS, fighterOf, GEAR, LIFESTYLES, lifestyleOf, setLifestyle, type Lifestyle,
@@ -337,6 +338,66 @@ function Monde({ state }: { state: GameState }) {
   );
 }
 
+/** Gouverner une terre de sa maison (phase 12). */
+function Fief({ state, game, sid }: { state: GameState; game: Game; sid: string }) {
+  const { act } = game;
+  const st = state.settlements[sid];
+  const p = state.characters[state.playerId];
+  const here = settlementIdOf(state, p.locationId) === sid;
+  const atManor = state.businesses[st.manorId]?.locationId === p.locationId;
+  const house = houseOfPlayer(state)!;
+  const day = toDate(state.time).day;
+  const over = !!state.gameOver;
+  const pct = Math.round(st.taxRate * 100);
+  const audienceIn = st.audienceDay !== undefined ? 7 - (day - st.audienceDay) : 0;
+  return (
+    <div className="house">
+      <div className="rel-row-head"><b>Fief : {st.name}</b><span className="muted small">grogne {st.unrest} (estimée {computeUnrest(state, st)}) · prospérité {st.prosperity}</span></div>
+      <div className="save-row">
+        <span className="small">Impôt {pct} %</span>
+        <button className="btn sm ghost" disabled={over || st.taxRate <= TAX_MIN} onClick={() => act(s => setFiefTax(s, sid, st.taxRate - 0.01))} aria-label={`Baisser l'impôt de ${st.name}`}>−1 %</button>
+        <button className="btn sm ghost" disabled={over || st.taxRate >= TAX_MAX} onClick={() => act(s => setFiefTax(s, sid, st.taxRate + 0.01))} aria-label={`Relever l'impôt de ${st.name}`}>+1 %</button>
+        <button className="btn sm" disabled={over || !atManor || audienceIn > 0} title={atManor ? 'Arbitrer la pire querelle, faire l’aumône aux plus pauvres (sur le trésor) ; la grogne s’apaise deux semaines' : `Rends-toi à l’intendance de ${st.name}`} onClick={() => act(holdAudience)}>
+          Tenir audience (2 h){audienceIn > 0 ? ` · dans ${audienceIn} j` : ''}</button>
+      </div>
+      <p className="muted small">L’impôt prélève chaque lundi une part de la caisse des ateliers ; l’intendance reverse 40 % à ta maison, et un tribut sur ses réserves. Chaque point d’impôt ajoute environ 2,5 points de grogne.</p>
+      <ul className="rel-list">
+        {WORK_IDS.map(id => {
+          const w = WORKS[id];
+          const built = st.works?.find(x => x.id === id);
+          return (
+            <li key={id}><div className="rel-row-head"><b>{w.name}</b>
+              {built ? <span className="small">{built.ready <= day ? 'achevé' : `chantier : prêt dans ${built.ready - day} j`}</span>
+                : <button className="btn sm" disabled={over || !here || house.treasury < w.cost} title={here ? w.effect : `Rends-toi à ${st.name} pour lancer le chantier`} onClick={() => act(s => buildWork(s, id))}>Bâtir ({w.cost} d)</button>}
+            </div><div className="muted small">{w.effect} · {w.days} jours de chantier</div></li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** Tournois de saison annoncés (phase 12). */
+function Tourneys({ state, game }: { state: GameState; game: Game }) {
+  const p = state.characters[state.playerId];
+  const day = toDate(state.time).day;
+  const list = (state.tourneys ?? []).filter(t => t.status !== 'done').sort((a, b) => a.day - b.day);
+  const last = (state.tourneys ?? []).filter(t => t.status === 'done' && t.championId).sort((a, b) => b.day - a.day)[0];
+  if (!list.length && !last) return null;
+  const here = upcomingTourney(state, settlementIdOf(state, p.locationId));
+  return (<>
+    <h4>Tournois</h4>
+    <ul className="rel-list">
+      {list.map(t => (
+        <li key={t.id}><div className="rel-row-head"><b>{tourneyName(state, t)}</b><span className="small">{t.day === day ? 'aujourd’hui, 8 h – 13 h' : `dans ${t.day - day} j`}</span></div>
+          <div className="muted small">Prix : {t.purse} d plus les droits ({t.fee} d par concurrent) · duels courtois : le premier qui encaisse 25 points perd l’assaut. Un champion sans titre est armé écuyer.</div></li>
+      ))}
+    </ul>
+    {here && tourneyOpen(state, here) && <button className="btn" disabled={!!state.gameOver || p.money < TOURNEY_FEE} onClick={() => game.act(enterTourney)}>Entrer en lice ({TOURNEY_FEE} d)</button>}
+    {last && <p className="muted small">Dernier champion : {last.championId === p.id ? 'toi' : fullName(state.characters[last.championId!])} ({tourneyName(state, last)}).</p>}
+  </>);
+}
+
 function Pouvoir({ state, game }: { state: GameState; game: Game }) {
   const p = state.characters[state.playerId];
   const { act } = game;
@@ -388,12 +449,14 @@ function Pouvoir({ state, game }: { state: GameState; game: Game }) {
             <button className="btn sm ghost" disabled={over || p.money < 1} onClick={() => act(s => houseTreasury(s, 50))}>Verser 50 d</button>
             <button className="btn sm ghost" disabled={over || mine.treasury < 1} onClick={() => act(s => houseTreasury(s, -50))}>Prendre 50 d</button>
           </div>
+          {lands.map(st => <Fief key={st.id} state={state} game={game} sid={st.id} />)}
           {!war && targets.length > 0 && <div className="save-row">{targets.map(id => (
             <button key={id} className="btn sm danger" disabled={over || !!activeWar(state)} title={`Contre ${state.orgs[state.settlements[id].lordHouseId]?.name}`} onClick={() => act(s => declareWar(s, id))}>Revendiquer {state.settlements[id].name}</button>
           ))}</div>}
           <p className="muted small">Une bataille chaque lundi ; deux victoires prennent la place. Toi, tes soldats et tes hommes d’armes y combattez. Conquise, une terre paie tribut à ta maison — et son ancienne maison voudra la reprendre.</p>
         </>);
       })()}
+      <Tourneys state={state} game={game} />
       {myGang && (<>
         <h4>Ta bande : {myGang.name}{myGang.leaderId === p.id ? ' — tu la mènes' : ''}</h4>
         <p className="muted small">{myGang.members.length} membres · trésor {myGang.treasury} d · recherchée {myGang.heat >= 70 ? 'activement' : myGang.heat >= 30 ? 'un peu' : 'à peine'}. Ta part du butin tombe chaque lundi. Repaire : {state.settlements[myGang.seatId]?.name}.</p>

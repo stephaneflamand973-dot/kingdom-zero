@@ -309,8 +309,31 @@ export interface War {
 export interface Wanted { characterId: string; houseId: string; reason: string; bounty: number; sinceDay: number }
 
 /** Rencontre en cours pour le joueur (embuscade, arrestation) : combat au tour par tour. */
+export type WorkId = 'palissade' | 'moulin' | 'chapelle' | 'paves';
+
+/** Tournoi de saison (phase 12) : tableau à élimination, duels courtois. */
+export interface Tourney {
+  id: string;
+  houseId: string;
+  settlementId: string;
+  day: number;
+  fee: number;
+  purse: number;                 // part du trésor de la maison promise au vainqueur
+  fees: number;                  // droits d'inscription perçus
+  status: 'announced' | 'running' | 'done';
+  next: string[];                // qualifiés pour le tour suivant (ou inscrits au départ)
+  queue: string[][];             // assauts restant à livrer dans le tour en cours
+  round: number;
+  log: string[];
+  championId?: string;
+  playerIn?: boolean;
+}
+
 export interface Encounter {
-  kind: 'bandits' | 'arrest';
+  kind: 'bandits' | 'arrest' | 'duel';
+  /** Duel de tournoi : points de vie au début de l'assaut (premier qui en perd 25 a perdu). */
+  tourneyId?: string;
+  duelStart?: Record<string, number>;
   enemies: string[];
   hp: Record<string, number>;
   demand: number;
@@ -345,6 +368,8 @@ export interface Settlement {
   revoltUntilDay?: number;       // révolte : l'impôt n'est plus perçu
   popCap: number;                // au-delà, les migrants ne s'installent plus
   convoyDay?: number;            // dernier convoi de grain d'urgence (phase 6)
+  works?: { id: WorkId; ready: number }[]; // aménagements commandés par le seigneur (phase 12)
+  audienceDay?: number;          // dernière audience tenue par le seigneur (phase 12)
   history: SettlementSnapshot[];
 }
 
@@ -452,6 +477,8 @@ export interface GameState {
   convoys?: GrainConvoy[];
   /** Promesse du joueur de combattre pour une maison à la prochaine bataille (phase 11). */
   muster?: { houseId: string; day: number };
+  /** Tournois de saison (phase 12). */
+  tourneys?: Tourney[];
   /** Requêtes des habitants (phase 7). */
   quests?: Quest[];
   /** Chronique de la lignée du joueur (phase 7). */

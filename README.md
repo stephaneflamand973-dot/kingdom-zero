@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 167 tests automatisés (scénarios A–G, phases 2 à 11, invariants, fuzz) |
+| `npm test` | 176 tests automatisés (scénarios A–G, phases 2 à 12, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -73,6 +73,8 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
   perks.ts         atouts de départ choisis à la création du personnage (phase 9)
   gear.ts          armes et armures forgées, usure, réparation ; train de vie (phase 10)
   warband.ts       bande du joueur, embuscades de caravanes, hommes d'armes, batailles (phase 11)
+  fief.ts          gouverner son fief : impôt, aménagements, audiences ; chantiers des seigneurs (phase 12)
+  tourney.ts       tournois de saison, assauts courtois du joueur (phase 12)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
   audio.ts         ambiance sonore procédurale (Web Audio, aucun fichier)
   a11y.ts, prefs.ts  fenêtres accessibles (focus, Échap), préférences (son, texte, mouvement, contraste)
@@ -598,6 +600,48 @@ Onglet **Pouvoir** : vos hommes d'armes, les habitants prêts à s'engager ici, 
   indécise se juge à qui a le mieux tenu le terrain. Mesuré sur 16 ans (6 mondes) : **3 à 10 guerres** au lieu
   de 1 à 4, sans mort de faim et aux bilans exacts.
 
+## Phase 12 — seigneurie, tournois et escrime
+
+- **Gouverner son fief.** Quand ta maison tient une localité, l'onglet Pouvoir affiche son fief :
+  - **l'impôt** se règle point par point (de 2 à 15 %) ; ta maison ne le change plus d'elle-même. Chaque point
+    rapporte davantage chaque lundi et ajoute environ 2,5 points de grogne ; les habitants se souviennent
+    d'une hausse comme d'une baisse ;
+  - **les aménagements** se paient sur le trésor de la maison. L'argent reste dans le pays : la moitié va au
+    fournisseur de matériaux (bûcheron, mine ou forge), le reste aux journaliers sans emploi engagés. Il y en a
+    quatre : la palissade (+3 en défense pour qui défend la localité), le moulin banal (fermes et fournil
+    +15 %), la chapelle (−8 de grogne) et les chemins pavés (usure deux fois plus lente). Chaque chantier dure
+    deux à quatre semaines ;
+  - **tenir audience** (2 h, à l'intendance, une fois par semaine) : tu arbitres la pire querelle du lieu (la
+    diplomatie et le charisme décident si tu réconcilies ou si tu tranches), tu fais l'aumône aux plus pauvres
+    sur le trésor, et la grogne s'apaise pendant deux semaines.
+- **Les seigneurs PNJ bâtissent aussi** quand leur trésor déborde : une chapelle contre la grogne, une palissade
+  sur une terre revendiquée, des pavés quand les chemins se dégradent, un moulin sinon. Un seul chantier à la
+  fois dans la région, et jamais par un seigneur avare.
+- **Tournois de saison.** Le jour de la fête, chaque maison qui en a les moyens annonce un tournoi dans sa
+  localité-siège pour le dixième jour. Le vainqueur touche une part du trésor (jusqu'à 80 d) plus les droits
+  d'inscription (10 d) : c'est de l'argent réel. Les huit meilleurs combattants de la région s'affrontent en
+  élimination directe ; les seigneurs président et ne joutent pas. Les duels sont courtois : on perd l'assaut
+  quand on a encaissé 25 points, on ne meurt pas en lice, et les armes sont émoussées (la moitié du bonus d'une
+  arme forgée compte). Entre 8 h et 13 h, le joueur peut **entrer en lice** et livre lui-même ses assauts. Un
+  champion sans titre est armé écuyer par le seigneur au soir du tournoi : c'est une nouvelle voie vers la
+  fondation d'une maison. Sans le joueur, le tournoi se joue à 13 h.
+- **Postures d'escrime**, en embuscade, en arrestation comme en lice :
+  - **frapper** ;
+  - **coup puissant** : dégâts ×1,6, moins précis, garde ouverte ;
+  - **parer** : on encaisse beaucoup moins, mais on frappe à moitié ;
+  - **feinter** : selon l'agilité et l'intelligence, face à l'adversaire le plus aguerri. Réussie, la feinte
+    ouvre sa garde ; éventée, elle te laisse sans frapper ce tour-là.
+- **Les PNJ s'équipent.** Chaque lundi, les soldats et les gardes qui ont de l'épargne se font forger ce qui leur
+  manque : gambison, puis épée, puis cotte. Les marchands achètent une dague. Le métal sort réellement du stock
+  de la forge, qui façonne deux pièces par semaine au plus pour les gens du lieu. Le fourniment de la maison ne
+  couvre plus que la pièce qu'on n'a pas achetée.
+- Sur 16 ans (6 mondes) :
+  - entre 60 et 96 tournois ; deux grands rivaux se partagent le plus souvent les victoires ;
+  - 6 à 24 pièces forgées pour des PNJ ;
+  - 0 à 4 aménagements par localité ;
+  - 2 à 13 guerres ;
+  - aucun mort de faim, argent et objets exacts, environ 17 à 30 ms par jour simulé.
+
 ## État réel du développement
 
 ### Implémenté et testé
@@ -612,7 +656,7 @@ Onglet **Pouvoir** : vos hommes d'armes, les habitants prêts à s'engager ici, 
 - Relations affinité/confiance asymétriques, influence sur les prix, refus de commercer motivés
   par des faits connus (« Aldric Ferrand refuse… Depuis que tu l’as insulté… »), apaisement avec le temps.
 - Succession économique : à la mort d’un propriétaire, l’employé le plus compétent reprend l’affaire.
-- Sauvegarde : 3 emplacements + automatique quotidienne, export/import JSON, versionnement, somme de
+- Sauvegarde : six emplacements, une sauvegarde rapide et une automatique quotidienne, export/import JSON, versionnement, somme de
   contrôle, contrôle d’intégrité au chargement.
 - Déterminisme complet (même graine + mêmes actions = même monde, testé).
 
@@ -621,22 +665,17 @@ Onglet **Pouvoir** : vos hommes d'armes, les habitants prêts à s'engager ici, 
   des enfants (cela découle de leurs relations), ni à transmettre un métier à leurs enfants.
 - Le monde de départ compte plus d'hommes que de femmes jeunes : peu de foyers peuvent avoir des enfants
   au début ; les jeunes ménages qui s'installent rééquilibrent peu à peu.
-- Le joueur ne choisit pas encore son héritier à l'avance ni ne rédige de testament.
 - Le joueur ne peut pas encore affréter sa propre caravane ni embaucher un charretier : il transporte
   lui-même, dans la limite de sa charge.
 - Les PNJ peuvent fonder une affaire, mais les conditions (épargne, pénurie locale) sont rarement réunies :
   aucune fondation spontanée sur les simulations de référence.
-- Niveaux de détail : les ~48 PNJ sont tous simulés finement à l’heure (environ 13 ms par jour simulé avec ~52 habitants, mesuré) ;
-  une simulation allégée des localités lointaines viendra avec une carte plus vaste.
-- Combat : uniquement une riposte physique à l’insulte ; pas de combat au tour par tour.
-- Création de personnage : profil adulte équilibré fixe (choix prévu par la consigne pour la v1).
-- Niveaux de détail : tous les PNJ sont simulés en détail à l’heure (suffisant à 20 PNJ : environ 3,5 ms par
-  jour simulé mesurés) ; la simulation simplifiée des PNJ secondaires viendra avec plusieurs villages.
+- Niveaux de détail : les 50 à 65 habitants sont tous simulés finement à l’heure (17 à 30 ms par jour simulé,
+  mesuré sur 16 ans) ; une simulation allégée des localités lointaines viendra avec une carte plus vaste.
 
 ### Prévu (phases suivantes)
-Caravanes et escortes du joueur ; adhésion du joueur à une bande ; armes et armures ; organisations, criminalité structurée, noblesse ; familles, naissances,
-héritage du joueur ; combat au tour par tour ; intégration optionnelle d’un modèle de langage pour
-les dialogues (le moteur restera l’autorité sur les faits).
+Caravanes affrétées par le joueur ; une région plus vaste, avec des localités lointaines simulées plus
+légèrement ; davantage de maisons nobles ; intégration optionnelle d'un modèle de langage pour les dialogues (le
+moteur restera l'autorité sur les faits).
 
 ### Limites connues
 - L’argent tend encore à se concentrer chez les épargnants ; dividendes, domesticité et dons aux hospices le
@@ -645,8 +684,12 @@ les dialogues (le moteur restera l’autorité sur les faits).
   être attaqués par les brigands.
 - Le son est volontairement simple (synthèse) ; la vérification mesure qu'un signal est produit, pas sa
   qualité à l'oreille.
-- Les reconquêtes des maisons exilées échouent le plus souvent (peu de partisans, pas de tribut) ; les PNJ civils
-  n'achètent pas d'armes ; il n'y a que deux maisons nobles à l'origine (plus celle du joueur).
+- Les reconquêtes des maisons exilées échouent le plus souvent (peu de partisans, pas de tribut) ; il n'y a que
+  deux maisons nobles à l'origine (plus celle du joueur).
+- Les tournois couronnent souvent les deux mêmes rivaux, les gardes les mieux équipés de la région. Les PNJ
+  n'utilisent pas de postures : seul le joueur choisit sa manière de se battre.
+- Le joueur ne tient audience que dans ses propres terres. Un conseiller pèse toujours sur l'impôt d'un
+  seigneur PNJ par ses requêtes.
 - Carrière : seul le joueur a des grades (les PNJ gardent un salaire unique par atelier). Un joueur qui
   thésaurise sans rien dépenser finit par assécher les caisses des ateliers, qui ne peuvent plus le payer :
   c'est la conséquence de l'économie fermée, visible surtout au pilote automatique.
@@ -660,9 +703,5 @@ les dialogues (le moteur restera l’autorité sur les faits).
   est large, les caravanes ne partent que lorsqu'une pénurie creuse les prix.
 - Les marchands s'endettent souvent et finissent saisis par leurs créanciers : leurs expéditions sont
   risquées, et la même histoire se répète d'une partie à l'autre.
-- Guerres et révoltes sont possibles mais rares : les conditions (rancune, supériorité, grogne durable) se
-  réunissent peu souvent en deux ans simulés.
-- Le joueur ne peut pas encore lever ses propres troupes, rejoindre la bande ni prendre part à une bataille.
-- Pas d'armes ni d'armures : la force d'un combattant ne dépend que de lui.
 - Une mort de faim reste théoriquement possible si toute la région manque de vivres en même temps, ou pour
   un voyageur bloqué sur la route ; cela n'est arrivé dans aucune des 14 simulations de 16 ans.

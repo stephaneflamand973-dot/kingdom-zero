@@ -8,7 +8,11 @@ import type { Character, GameState } from './types';
 import { clamp, fullName } from './util';
 import { gearBonus } from './gear';
 
-export interface Fighter { id: string; name: string; hp: number; attack: number; defense: number }
+export interface Fighter {
+  id: string; name: string; hp: number; attack: number; defense: number;
+  /** Posture du tour (phase 12) : bonus de précision, multiplicateur de dégâts, garde contre les coups reçus. */
+  hitMod?: number; dmgMul?: number; guard?: number; holds?: boolean;
+}
 
 export function fighterOf(c: Character): Fighter {
   const fatigue = c.needs.energy < 20 ? 0.8 : 1;
@@ -31,11 +35,11 @@ export interface RoundLog { text: string }
 export function exchange(state: GameState, a: Fighter[], b: Fighter[], log: string[]): void {
   const strike = (atk: Fighter, targets: Fighter[]) => {
     const alive = targets.filter(t => t.hp > 0);
-    if (!alive.length || atk.hp <= 0) return;
+    if (!alive.length || atk.hp <= 0 || atk.holds) return;
     const t = alive[Math.floor(rand(state) * alive.length)];
-    const hit = clamp(0.55 + (atk.attack - t.defense) * 0.04, 0.15, 0.9);
+    const hit = clamp(0.55 + (atk.attack - t.defense) * 0.04 + (atk.hitMod ?? 0) - (t.guard ?? 0), 0.15, 0.9);
     if (rand(state) < hit) {
-      const dmg = Math.max(1, Math.round(randInt(state, 3, 8) + atk.attack * 0.4 - t.defense * 0.3));
+      const dmg = Math.max(1, Math.round((randInt(state, 3, 8) + atk.attack * 0.4 - t.defense * 0.3) * (atk.dmgMul ?? 1)));
       t.hp = Math.max(0, t.hp - dmg);
       log.push(`${atk.name} touche ${t.name} (−${dmg})${t.hp === 0 ? ` : ${t.name} s'effondre` : ''}.`);
     } else log.push(`${t.name} esquive ${atk.name}.`);
@@ -77,4 +81,30 @@ export function applyWounds(state: GameState, fighters: Fighter[], lethality: nu
     c.health = clamp(Math.max(f.hp, f.hp <= 0 ? 5 : f.hp), 0, 100);
   }
   return dead;
+}
+
+// ── Postures (phase 12) ──────────────────────────────────────
+
+export type Stance = 'fight' | 'strike' | 'guard' | 'feint';
+
+export const STANCES: Record<Stance, { label: string; hint: string }> = {
+  fight: { label: 'Frapper', hint: 'un échange de coups' },
+  strike: { label: 'Coup puissant', hint: 'dégâts ×1,6, moins précis, garde ouverte' },
+  guard: { label: 'Parer', hint: 'encaisse moins, frappe à moitié' },
+  feint: { label: 'Feinter', hint: 'Agilité, Intelligence : réussie, le coup porte presque à coup sûr' },
+};
+
+/**
+ * Applique la posture choisie au combattant du joueur pour ce tour. Une feinte se joue
+ * contre l'adversaire le plus aguerri : réussie, elle ouvre sa garde ; manquée, elle laisse sans riposte.
+ */
+export function applyStance(state: GameState, f: Fighter, c: Character, stance: Stance, foes: Character[], log: string[]): void {
+  if (stance === 'strike') { f.hitMod = -0.12; f.dmgMul = 1.6; f.guard = -0.08; }
+  else if (stance === 'guard') { f.hitMod = -0.05; f.dmgMul = 0.5; f.guard = 0.25; }
+  else if (stance === 'feint') {
+    const best = Math.max(0, ...foes.map(o => o.skills.combat));
+    const p = clamp(0.4 + (c.attributes.agilite + c.attributes.intelligence - 10) * 0.03 + c.skills.combat / 200 - best / 250, 0.15, 0.85);
+    if (rand(state) < p) { f.hitMod = 0.3; f.dmgMul = 1.25; f.guard = 0.1; log.push(`${f.name} feinte et trouve l'ouverture.`); }
+    else { f.holds = true; f.guard = -0.1; log.push(`La feinte de ${f.name} est éventée.`); }
+  }
 }
