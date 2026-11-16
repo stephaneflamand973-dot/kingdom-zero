@@ -77,7 +77,7 @@ const MIGRATIONS: Record<number, (s: GameState) => GameState> = {
   7: s => { s.quests ??= []; s.chronicle ??= []; s.chronicleSeq ??= s.eventSeq; return s; },
 };
 
-export function deserialize(text: string): { state?: GameState; error?: string; savedAt?: string } {
+export function deserialize(text: string): { state?: GameState; error?: string; savedAt?: string; repaired?: string[] } {
   let file: SaveFile;
   try { file = JSON.parse(text); } catch { return { error: 'Fichier de sauvegarde illisible.' }; }
   if (file?.format !== 'KINGDOM_ZERO_SAVE' || !file.state) return { error: "Ce n'est pas une sauvegarde de Kingdom Zero." };
@@ -91,9 +91,93 @@ export function deserialize(text: string): { state?: GameState; error?: string; 
     state = m(state); v++;
   }
   state.version = SAVE_VERSION;
+  // Une partie jouée avec une version plus ancienne peut porter des incohérences dues à des bogues corrigés
+  // depuis : on la répare plutôt que de la refuser.
+  let repaired: string[] = [];
+  if (checkIntegrity(state).length) repaired = repairState(state);
   const errors = checkIntegrity(state);
   if (errors.length) return { error: `Sauvegarde incohérente : ${errors.slice(0, 3).join(' ; ')}` };
-  return { state, savedAt: file.savedAt };
+  return { state, savedAt: file.savedAt, repaired };
+}
+
+/**
+ * Remet d'aplomb une partie incohérente (registres d'emploi, contrats, propriétaires morts, valeurs invalides,
+ * horloge). Renvoie la liste des réparations effectuées. Ne touche à rien de ce qui est déjà cohérent.
+ */
+export function repairState(state: GameState): string[] {
+  const fixes: string[] = [];
+  const fix = (t: string) => { if (fixes.length < 40) fixes.push(t); };
+  const int = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
+  const cleanInv = (inv: Record<string, number | undefined>, who: string) => {
+    for (const [k, v] of Object.entries(inv)) {
+      if (Number.isInteger(v) && v! > 0) continue;
+      const n = int(v);
+      if (n > 0) inv[k] = n; else delete inv[k];
+      fix(`${who} : quantité de ${k} corrigée`);
+    }
+  };
+  const fallback = state.settlements[state.settlementOrder[0]]?.squareId ?? state.locationOrder[0];
+  state.characterOrder = state.characterOrder.filter(id => !!state.characters[id]);
+  for (const id of state.characterOrder) {
+    const c = state.characters[id];
+    if (!Number.isInteger(c.money) || c.money < 0) { c.money = int(c.money); fix(`${id} : bourse corrigée`); }
+    cleanInv(c.inventory, id);
+    if (!state.locations[c.homeId]) { c.homeId = fallback; fix(`${id} : foyer inconnu`); }
+    if (!state.locations[c.locationId]) { c.locationId = c.homeId; fix(`${id} : lieu inconnu`); }
+    if (!(c.health >= 0 && c.health <= 100)) { c.health = Math.min(100, Math.max(0, Number(c.health) || 0)); fix(`${id} : santé corrigée`); }
+    if (c.employerId && !state.businesses[c.employerId]) { c.employerId = undefined; fix(`${id} : employeur disparu`); }
+    if (!c.alive && c.employerId) c.employerId = undefined;
+  }
+  state.businessOrder = state.businessOrder.filter(id => !!state.businesses[id]);
+  for (const id of state.businessOrder) {
+    const b = state.businesses[id];
+    if (!Number.isInteger(b.treasury) || b.treasury < 0) { b.treasury = int(b.treasury); fix(`${id} : caisse corrigée`); }
+    cleanInv(b.stock, id);
+    if (b.ownerId && !state.characters[b.ownerId]?.alive) { b.ownerId = null; fix(`${id} : propriétaire disparu, passe sous tutelle`); }
+    const before = b.employees.length;
+    // ne restent au registre que les vivants qui y travaillent vraiment (ou qui n'ont pas d'autre place)
+    b.employees = [...new Set(b.employees)].filter(e => {
+      const c = state.characters[e];
+      if (!c?.alive || b.ownerId === e) return false;
+      if (c.employerId === id) return true;
+      const other = c.employerId ? state.businesses[c.employerId] : undefined;
+      if (other && (other.employees.includes(e) || other.ownerId === e)) return false;
+      c.employerId = id;
+      return true;
+    });
+    if (b.employees.length !== before) fix(`${id} : registre du personnel remis à jour`);
+  }
+  // un vivant qui se dit employé quelque part doit figurer au registre
+  for (const id of state.characterOrder) {
+    const c = state.characters[id];
+    const b = c.alive && c.employerId ? state.businesses[c.employerId] : undefined;
+    if (b && b.ownerId !== id && !b.employees.includes(id)) { b.employees.push(id); fix(`${id} : ajouté au registre de ${b.id}`); }
+  }
+  for (const pr of state.properties ?? []) {
+    if (pr.tenantId && !state.characters[pr.tenantId]) { pr.tenantId = undefined; pr.rentDueDay = undefined; fix(`${pr.id} : locataire disparu`); }
+    cleanInv(pr.storage, pr.id);
+  }
+  for (const cv of state.caravans ?? []) cleanInv(cv.cargo, cv.id);
+  for (const cv of state.convoys ?? []) cleanInv(cv.cargo, cv.id);
+  const loans = state.loans.length;
+  state.loans = state.loans.filter(l => state.characters[l.lenderId] && state.characters[l.borrowerId]);
+  for (const l of state.loans) if (!Number.isInteger(l.remaining) || l.remaining < 0) l.remaining = int(l.remaining);
+  if (state.loans.length !== loans) fix('prêts envers des inconnus effacés');
+  for (const k of state.contracts) {
+    if (k.status !== 'active') continue;
+    const b = state.businesses[k.businessId], w = state.characters[k.workerId];
+    if (!b || !w?.alive || !b.employees.includes(w.id) || w.employerId !== b.id) { k.status = 'ended'; k.endReason = 'contrat caduc (réparation)'; fix(`${k.id} : contrat caduc clos`); }
+  }
+  const hours = Math.floor((state.time + 360) / 60);
+  if (state.processedHours !== hours) { state.processedHours = hours; fix('horloge resynchronisée'); }
+  return fixes;
+}
+
+// Copie brute d'un emplacement vers un autre (filet de sécurité avant d'écraser une partie).
+export function backupSlot(store: KVStore, from: string, to: string): boolean {
+  const t = store.getItem(KEY(from));
+  if (!t) return false;
+  try { store.setItem(KEY(to), t); return true; } catch { return false; }
 }
 
 // Stockage navigateur (localStorage) — optionnel, injecté pour rester testable.

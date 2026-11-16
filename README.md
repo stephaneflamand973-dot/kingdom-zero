@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 143 tests automatisés (scénarios A–G, phases 2 à 9, invariants, fuzz) |
+| `npm test` | 146 tests automatisés (scénarios A–G, phases 2 à 9, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -524,6 +524,15 @@ place, avec un lien pour s'y rendre et un bouton « déposer le nécessaire ». 
 conseillé** par type d'affaire (matières premières et trois jours de gages : 225 à 275 d) : une boulangerie
 ainsi dotée emploie 2 ouvriers et cuit 790 pains en quatre semaines. Une forge ou un comptoir face à un
 concurrent installé restent difficiles à rentabiliser (demande « faible »).
+
+**Reprendre une ancienne partie.** Le chargement refusait toute sauvegarde portant la moindre incohérence —
+or une partie jouée avec une version antérieure pouvait en garder de bogues corrigés depuis (contrat resté actif,
+registre du personnel faux, propriétaire mort, horloge décalée) ; le jeu affichait alors la création de
+personnage comme s'il n'y avait rien. Désormais une telle partie est **réparée au chargement** (et le récit le
+signale) ; seule une partie sans joueur reste refusée. Avant qu'une nouvelle partie ne remplace la partie en
+cours, celle-ci est copiée dans « Partie précédente ». Une sauvegarde automatique illisible est mise de côté,
+jamais écrasée ; le jeu tente alors la sauvegarde rapide puis la copie de sécurité, et l'écran de création
+propose « Charger une partie ».
 
 **Testament.** Dans l'onglet Famille, on désigne son héritier parmi sa famille ou ses amis proches : il reçoit
 biens, maisons et affaires, et il est le premier proposé pour reprendre la lignée. Le testament s'efface à la

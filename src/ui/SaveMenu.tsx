@@ -5,7 +5,7 @@ import { useModal } from './a11y';
 
 const MANUAL = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6'];
 const SLOT_NAME: Record<string, string> = {
-  auto: 'Sauvegarde automatique', rapide: 'Sauvegarde rapide (K / L)',
+  auto: 'Sauvegarde automatique', rapide: 'Sauvegarde rapide (K / L)', precedente: 'Partie précédente (copie de sécurité)', illisible: 'Sauvegarde mise de côté (illisible auparavant)',
   slot1: 'Emplacement I', slot2: 'Emplacement II', slot3: 'Emplacement III', slot4: 'Emplacement IV', slot5: 'Emplacement V', slot6: 'Emplacement VI',
 };
 
@@ -100,6 +100,8 @@ export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void })
         <ul className="slots">
           {row('auto', false)}
           {row('rapide', false)}
+          {store && slotInfo(store, 'precedente') && row('precedente', false)}
+          {store && slotInfo(store, 'illisible') && row('illisible', false)}
           {MANUAL.map(s => row(s, true))}
         </ul>
         <div className="save-row">

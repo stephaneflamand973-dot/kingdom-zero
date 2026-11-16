@@ -36,6 +36,7 @@ function Game() {
   const p = state.characters[state.playerId];
   const d = toDate(state.time);
   const blocked = !!state.encounter || !!state.pendingSuccession || !!state.gameOver;
+  const saved = !game.startupError && !!game.store?.getItem('kingdom-zero:save:auto');
   const modalOpen = menu || help || !!talkTo || blocked || game.creating;
 
   // Ambiance sonore : suit l'heure, la saison, le lieu et la météo
@@ -106,7 +107,7 @@ function Game() {
       {help && <HelpModal state={state} prefsApi={prefsApi} onClose={() => setHelp(false)} />}
       {menu && <SaveMenu game={game} onClose={() => setMenu(false)} />}
       {state.gameOver && !menu && !game.creating && <GameOver text={state.gameOver} onMenu={() => setMenu(true)} />}
-      {game.creating && <CharacterCreation game={game} canCancel={!!game.store?.getItem('kingdom-zero:save:auto')} />}
+      {game.creating && !menu && <CharacterCreation game={game} canCancel={!!saved} onLoad={() => setMenu(true)} />}
     </div>
   );
 }

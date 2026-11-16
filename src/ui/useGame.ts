@@ -1,6 +1,6 @@
 // Pont entre le moteur (mutable, sans React) et l'interface.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createWorld, formatClock, formatDate, loadFromStore, saveToStore, toDate, type ActionResult, type GameState, type KVStore, type PlayerSetup, type WorldEvent } from '../engine';
+import { backupSlot, createWorld, formatClock, formatDate, loadFromStore, saveToStore, toDate, type ActionResult, type GameState, type KVStore, type PlayerSetup, type WorldEvent } from '../engine';
 import { sound } from './audio';
 
 export interface Feed { id: number; time: number; text: string; ok: boolean }
@@ -34,17 +34,33 @@ const store: KVStore | null = (() => {
   try { const t = '__kz_test__'; localStorage.setItem(t, '1'); localStorage.removeItem(t); return localStorage; } catch { return null; }
 })();
 
-function savedState(): GameState | undefined {
-  if (!store) return undefined;
-  const auto = loadFromStore(store, 'auto');
-  return auto.state ?? undefined;
+/** Charge la partie au démarrage : la sauvegarde automatique, sinon la rapide ou la copie de sécurité. */
+function savedState(): { state?: GameState; error?: string; note?: string } {
+  if (!store) return {};
+  let firstError: string | undefined;
+  for (const slot of ['auto', 'rapide', 'precedente']) {
+    const r = loadFromStore(store, slot);
+    if (r.state) {
+      const note = slot !== 'auto' ? `La sauvegarde automatique était illisible : reprise depuis « ${slot === 'rapide' ? 'sauvegarde rapide' : 'partie précédente'} ».`
+        : r.repaired?.length ? `Ta partie venait d’une version plus ancienne : ${r.repaired.length} incohérence${r.repaired.length > 1 ? 's' : ''} réparée${r.repaired.length > 1 ? 's' : ''} au chargement.` : undefined;
+      return { state: r.state, note };
+    }
+    if (r.error && r.error !== 'Aucune sauvegarde dans cet emplacement.') {
+      firstError ??= r.error;
+      // on met de côté la sauvegarde illisible plutôt que de la laisser écraser
+      if (slot === 'auto') backupSlot(store, 'auto', 'illisible');
+    }
+  }
+  return { error: firstError };
 }
 
 export function useGame() {
   // sans partie sauvegardée, le monde attend la création du personnage
   const saved = useRef(savedState());
-  const ref = useRef<GameState>(saved.current ?? createWorld(Math.floor(Math.random() * 1e9)));
-  const [creating, setCreating] = useState(!saved.current);
+  const ref = useRef<GameState>(saved.current.state ?? createWorld(Math.floor(Math.random() * 1e9)));
+  const [creating, setCreating] = useState(!saved.current.state);
+  const startupError = saved.current.error;
+  const startupNote = saved.current.note;
   const creatingRef = useRef(creating);
   creatingRef.current = creating;
   const [version, setVersion] = useState(0);
@@ -125,11 +141,13 @@ export function useGame() {
     ref.current = r.state;
     lastAutoDay.current = toDate(r.state.time).day;
     setFeed([]); setToasts([]);
-    push(`Partie chargée : ${formatDate(r.state.time)}, ${formatClock(r.state.time)}.`, true);
+    push(`Partie chargée : ${formatDate(r.state.time)}, ${formatClock(r.state.time)}.${r.repaired?.length ? ` (${r.repaired.length} incohérence${r.repaired.length > 1 ? 's' : ''} d’une ancienne version réparée${r.repaired.length > 1 ? 's' : ''})` : ''}`, true);
+    setCreating(false);
     setVersion(v => v + 1);
     return null;
   }, [push]);
   const quickLoad = useCallback(() => { const err = loadFrom('rapide'); if (err) push(err === 'Aucune sauvegarde dans cet emplacement.' ? 'Aucune sauvegarde rapide : appuie d’abord sur K ou 💾.' : err, false); }, [loadFrom, push]);
+  useEffect(() => { if (startupNote) push(startupNote, true); }, [startupNote, push]);
   // filet de sécurité : sauvegarde automatique quand on quitte ou masque la page
   useEffect(() => {
     const flush = () => { if (!creatingRef.current) saveTo('auto', true); };
@@ -140,6 +158,8 @@ export function useGame() {
   }, [saveTo]);
 
   const newGame = useCallback((setup?: PlayerSetup, seed?: number) => {
+    // filet de sécurité : la partie en cours est conservée avant d'être remplacée
+    if (store) backupSlot(store, 'auto', 'precedente');
     const s = createWorld(seed ?? Math.floor(Math.random() * 1e9), setup);
     const p = s.characters[s.playerId];
     replace(s, `Une nouvelle vie commence à Valcendre pour ${p.firstName} ${p.lastName} (graine ${s.seed}).`);
@@ -147,7 +167,7 @@ export function useGame() {
     if (store) { try { saveToStore(store, 'auto', s); } catch { /* stockage plein */ } }
   }, [replace]);
 
-  return useMemo(() => ({ state: ref.current, version, act, feed, push, replace, newGame, store, toasts, dismiss, creating, setCreating, saveTo, loadFrom, quickSave, quickLoad, lastSaved }),
+  return useMemo(() => ({ state: ref.current, version, act, feed, push, replace, newGame, store, toasts, dismiss, creating, setCreating, saveTo, loadFrom, quickSave, quickLoad, lastSaved, startupError }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [version, feed, toasts, creating, lastSaved]);
 }

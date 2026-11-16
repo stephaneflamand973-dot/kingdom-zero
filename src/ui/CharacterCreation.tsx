@@ -7,7 +7,7 @@ const FIRST = { M: ['Aymeric', 'Bertrand', 'Galeran', 'Renaud', 'Thibaut', 'Engu
 const LAST = ['de Nulle-Part', 'Lefèvre', 'Duchemin', 'de la Haie', 'Courtepaille', 'Boisvert'];
 
 /** Création du personnage (phase 9) : nom, sexe, âge et deux atouts de départ. */
-export function CharacterCreation({ game, canCancel }: { game: Game; canCancel: boolean }) {
+export function CharacterCreation({ game, canCancel, onLoad }: { game: Game; canCancel: boolean; onLoad?: () => void }) {
   const [sex, setSex] = useState<'M' | 'F'>('M');
   const [firstName, setFirst] = useState('Aymeric');
   const [lastName, setLast] = useState('de Nulle-Part');
@@ -30,6 +30,8 @@ export function CharacterCreation({ game, canCancel }: { game: Game; canCancel: 
         {canCancel && <button className="close" onClick={() => game.setCreating(false)} aria-label="Fermer">×</button>}
         <h2 id="cc-title">Une nouvelle vie</h2>
         <p className="muted small">Tu arrives au pays de Valcendre sans attaches. Qui es-tu ?</p>
+        {game.startupError && <p className="warn" role="alert">Ta sauvegarde automatique n’a pas pu être lue ({game.startupError}). Elle a été mise de côté et ne sera pas écrasée : essaie « Charger une partie ».</p>}
+        {onLoad && <p className="small">Tu as déjà une partie ? <button className="link" onClick={onLoad}>Charger une partie sauvegardée ou importer un fichier</button></p>}
         <div className="cc-grid">
           <label>Prénom<input value={firstName} maxLength={24} onChange={e => setFirst(e.target.value)} data-autofocus /></label>
           <label>Nom<input value={lastName} maxLength={24} onChange={e => setLast(e.target.value)} /></label>

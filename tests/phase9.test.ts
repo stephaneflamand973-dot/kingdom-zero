@@ -285,3 +285,59 @@ describe('Diriger son affaire', () => {
     expect(recommendedCapital('forge')).toBeGreaterThan(recommendedCapital('tavern'));
   });
 });
+
+import { backupSlot, deserialize, repairState, serialize, checksum } from '../src/engine';
+
+describe('Reprendre une ancienne partie', () => {
+  const pack = (s: GameState) => { const body = JSON.stringify(s); return JSON.stringify({ format: 'KINGDOM_ZERO_SAVE', version: s.version, savedAt: 'x', checksum: checksum(body), state: s }); };
+
+  it('une sauvegarde abîmée par d’anciens bogues est réparée au chargement au lieu d’être refusée', () => {
+    const s = createWorld(950);
+    advanceTime(s, MIN_PER_DAY);
+    const p = s.characters.player;
+    const bakery = allBusinesses(s).find(b => b.kind === 'bakery')!;
+    const forge = allBusinesses(s).find(b => b.kind === 'forge')!;
+    // 1. contrat resté actif alors que le joueur n'est plus employé (ancien bogue du décès)
+    s.contracts.push({ id: 'k_old', businessId: bakery.id, workerId: p.id, wage: 4, hoursPerWeek: 24, startDay: 0, hoursThisWeek: 0, goodWeeks: 0, strikes: 0, status: 'active' });
+    // 2. employé inscrit au registre sans que sa fiche le dise (ancien bogue de la saisie)
+    const stray = Object.values(s.characters).find(c => !c.isPlayer && c.alive && c.employerId && c.employerId !== forge.id && !allBusinesses(s).some(b => b.ownerId === c.id))!;
+    forge.employees.push(stray.id);
+    // 3. propriétaire mort resté en titre, horloge désynchronisée, valeur invalide
+    const owner = s.characters[bakery.ownerId!]; owner.alive = false;
+    s.processedHours += 3;
+    p.money = -5;
+    const raw = pack(s);
+    const r = deserialize(raw);
+    expect(r.error).toBeUndefined();
+    expect(r.repaired!.length).toBeGreaterThanOrEqual(4);
+    const t = r.state!;
+    expect(checkIntegrity(t)).toEqual([]);
+    expect(t.contracts.find(k => k.id === 'k_old')!.status).toBe('ended');
+    expect(t.businesses[forge.id].employees.includes(stray.id)).toBe(false);
+    expect(t.characters[stray.id].employerId).toBe(stray.employerId); // il garde sa vraie place
+    expect(t.businesses[bakery.id].ownerId).toBeNull();
+    expect(t.characters.player.money).toBe(0);
+    // la partie réparée se joue normalement
+    advanceTime(t, 3 * MIN_PER_DAY);
+    expect(checkIntegrity(t)).toEqual([]);
+  });
+
+  it('une partie saine n’est pas touchée, et une partie sans joueur reste refusée', () => {
+    const s = createWorld(951);
+    expect(repairState(JSON.parse(JSON.stringify(s)))).toEqual([]);
+    expect(deserialize(serialize(s)).repaired).toEqual([]);
+    const broken = JSON.parse(JSON.stringify(s)); broken.playerId = 'personne';
+    expect(deserialize(pack(broken)).error).toMatch(/incohérente/);
+  });
+
+  it('la partie en cours est copiée avant d’être remplacée', () => {
+    const mem = new Map<string, string>();
+    const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    const s = createWorld(952, { firstName: 'Ancienne', lastName: 'Partie', sex: 'F', age: 30, perks: [] });
+    saveToStore(store, 'auto', s);
+    expect(backupSlot(store, 'auto', 'precedente')).toBe(true);
+    saveToStore(store, 'auto', createWorld(953));
+    expect(slotInfo(store, 'precedente')!.who).toBe('Ancienne Partie');
+    expect(backupSlot(store, 'vide', 'x')).toBe(false);
+  });
+});
