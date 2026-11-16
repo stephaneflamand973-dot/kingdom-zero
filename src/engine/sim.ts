@@ -4,6 +4,7 @@
 // franchie (résolution horaire), puis à chaque frontière de jour.
 // `processedHours` garantit qu'une heure n'est jamais simulée deux fois.
 // ─────────────────────────────────────────────────────────────
+import { dissolve } from './orgs';
 import { dailyRetinue } from './warband';
 import { dailyLifestyle } from './gear';
 import { learningRate } from './career';
@@ -446,7 +447,10 @@ export function killCharacter(state: GameState, c: Character, cause: string): vo
   if (c.isPlayer) {
     const candidates = successionCandidates(state, c);
     if (candidates.length) state.pendingSuccession = { deceasedId: c.id, candidates, cause: death.text };
-    else state.gameOver = death.text;
+    else {
+      state.gameOver = death.text;
+      for (const id of state.orgOrder) if (state.orgs[id].vacantFor === c.id) { state.orgs[id].vacantFor = undefined; dissolve(state, state.orgs[id], `Fin de la lignée de ${fullName(c)}`); }
+    }
   }
 }
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  houseOfPlayer, HOUSE_FOUNDING, foundHouse, houseTreasury, warTargets, declareWar, challengeGangLeader, activeWar,
   gangOf, retinue, retinueCap, recruitsHere, hireManAtArms, dismissManAtArms, gangRaid, leaveGang, RETINUE_BOUNTY, RETINUE_PAY,
   designateHeir, heirOptions, tryForChild, PERKS, fighterOf, GEAR, LIFESTYLES, lifestyleOf, setLifestyle, type Lifestyle,
   acceptedQuests, openOffers, quests, QUEST_NAMES, socialRank, askRaise, careerStatus, GRADES, GRADE_NAMES, raiseChance,
@@ -370,11 +371,35 @@ function Pouvoir({ state, game }: { state: GameState; game: Game }) {
           ))}
         </ul>
       </>)}
+      {(() => {
+        const mine = houseOfPlayer(state);
+        if (!mine) return p.title ? (<>
+          <h4>Ta maison</h4>
+          <p className="muted small">Ton titre te permet de lever bannière : {HOUSE_FOUNDING} d pour doter son trésor. Tes hommes d’armes en deviennent les soldats (soldés chaque semaine par la maison), ton conjoint et ton héritier en sont membres. Sans terre, il faudra conquérir un fief.</p>
+          <button className="btn sm" disabled={over || p.money < HOUSE_FOUNDING} onClick={() => act(foundHouse)}>Fonder ta maison ({HOUSE_FOUNDING} d)</button>
+        </>) : null;
+        const lands = landsOf(state, mine);
+        const targets = warTargets(state);
+        const war = activeWar(state, mine.id);
+        return (<>
+          <h4>{mine.name}</h4>
+          <p className="muted small">Trésor {mine.treasury} d · {soldiersOf(state, mine).length} soldat{soldiersOf(state, mine).length > 1 ? 's' : ''} · terres : {lands.length ? lands.map(l => l.name).join(', ') : 'aucune (pas de tribut)'}{war ? ` · en guerre pour ${state.settlements[war.targetSettlementId].name} (${war.victories.attacker}–${war.victories.defender})` : ''}</p>
+          <div className="save-row">
+            <button className="btn sm ghost" disabled={over || p.money < 1} onClick={() => act(s => houseTreasury(s, 50))}>Verser 50 d</button>
+            <button className="btn sm ghost" disabled={over || mine.treasury < 1} onClick={() => act(s => houseTreasury(s, -50))}>Prendre 50 d</button>
+          </div>
+          {!war && targets.length > 0 && <div className="save-row">{targets.map(id => (
+            <button key={id} className="btn sm danger" disabled={over || !!activeWar(state)} title={`Contre ${state.orgs[state.settlements[id].lordHouseId]?.name}`} onClick={() => act(s => declareWar(s, id))}>Revendiquer {state.settlements[id].name}</button>
+          ))}</div>}
+          <p className="muted small">Une bataille chaque lundi ; deux victoires prennent la place. Toi, tes soldats et tes hommes d’armes y combattez. Conquise, une terre paie tribut à ta maison — et son ancienne maison voudra la reprendre.</p>
+        </>);
+      })()}
       {myGang && (<>
-        <h4>Ta bande : {myGang.name}</h4>
+        <h4>Ta bande : {myGang.name}{myGang.leaderId === p.id ? ' — tu la mènes' : ''}</h4>
         <p className="muted small">{myGang.members.length} membres · trésor {myGang.treasury} d · recherchée {myGang.heat >= 70 ? 'activement' : myGang.heat >= 30 ? 'un peu' : 'à peine'}. Ta part du butin tombe chaque lundi. Repaire : {state.settlements[myGang.seatId]?.name}.</p>
         <div className="save-row">
           <button className="btn sm danger" disabled={over} onClick={() => act(gangRaid)} title="6 h · si une caravane passe sur une route voisine du repaire, la bande l’attaque">Guetter la route (6 h)</button>
+          {myGang.leaderId !== p.id && <button className="btn sm" disabled={over} onClick={() => act(challengeGangLeader)} title="Duel contre le chef, là où il se trouve : vainqueur, tu prends la tête (double part, racket sur ton ordre)">Défier le chef{myGang.leaderId ? ` (${state.characters[myGang.leaderId]?.firstName})` : ''}</button>}
           <button className="btn sm ghost" disabled={over} onClick={() => act(leaveGang)}>Quitter la bande</button>
         </div>
       </>)}

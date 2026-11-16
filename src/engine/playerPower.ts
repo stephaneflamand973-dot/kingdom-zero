@@ -157,6 +157,7 @@ export function encounterAction(state: GameState, choice: EncounterChoice): Acti
         const allies = alliesAtHand(state).filter(a => a.locationId === p.locationId);
         const af = allies.map(fighterOf);
         exchange(state, [pf, ...af], foes, log); settle();
+        allies.forEach((a, i) => e.log.push(...wearGear(state, a, true, af[i].hp < a.health)));
         for (const id of applyWounds(state, af, 0.15)) killCharacter(state, state.characters[id], 'en défendant son capitaine');
         e.log.push(...log);
         const left = foes.reduce((s, f) => s + f.hp, 0);

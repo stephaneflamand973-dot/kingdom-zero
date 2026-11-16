@@ -366,6 +366,17 @@ export function continueAs(state: GameState, id: string): { ok: boolean; message
   next.isPlayer = true;
   state.playerId = id;
   state.dynasty.designatedHeir = undefined; // le nouveau chef de lignée rédigera son propre testament
+  // la maison fondée par la lignée passe au successeur (phase 11)
+  for (const id of state.orgOrder) {
+    const o = state.orgs[id];
+    if (o.vacantFor !== prev.id || o.dissolved) continue;
+    for (const g of state.orgOrder.map(x => state.orgs[x])) if (g.kind !== 'house' && g.members.includes(next.id) && g.kind === 'gang') { g.members = g.members.filter(m => m !== next.id); delete g.roles[next.id]; }
+    o.vacantFor = undefined;
+    o.leaderId = next.id;
+    if (!o.members.includes(next.id)) o.members.push(next.id);
+    o.roles[next.id] = 'seigneur';
+    next.profession = 'seigneur';
+  }
   next.activity = { kind: 'idle', locationId: next.locationId, since: state.time, note: 'Reprend le flambeau' };
   const descendant = prev.childIds.includes(id);
   const last = state.dynasty.heads[state.dynasty.heads.length - 1];

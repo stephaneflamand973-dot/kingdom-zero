@@ -287,6 +287,8 @@ export interface Organization {
   dues: number;                       // cotisation hebdomadaire (guildes) / solde hebdomadaire (soldats)
   hideoutId?: string;                 // bandes : repaire
   patrolRoads: string[];              // maisons : routes patrouillées
+  vacantFor?: string;                 // maison du joueur défunt : en attente de son successeur (phase 11)
+  claimId?: string;                   // localité revendiquée (terres perdues) (phase 11)
   service: Record<string, number>;    // heures de service de la semaine (soldats)
 }
 
@@ -300,6 +302,7 @@ export interface War {
   battles: number;
   status: 'active' | 'ended';
   outcome?: string;
+  endDay?: number;   // fin de la guerre (trêve d'un an ensuite, phase 11)
 }
 
 /** Avis de recherche : un fait connu des autorités, une prime. */

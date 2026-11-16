@@ -113,6 +113,8 @@ export function onDeathOrgs(state: GameState, c: Character): void {
     const wasLeader = o.leaderId === c.id;
     o.members = o.members.filter(id => id !== c.id);
     delete o.roles[c.id];
+    // la maison du joueur attend celui qui reprendra sa lignée (phase 11)
+    if (wasLeader && c.isPlayer && o.kind !== 'gang') { o.leaderId = null; o.vacantFor = c.id; continue; }
     if (wasLeader) succession(state, o, `Mort de ${fullName(c)}`);
   }
   state.wanted = (state.wanted ?? []).filter(w => w.characterId !== c.id);

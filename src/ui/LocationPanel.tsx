@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  GEAR, GEAR_IDS, gearPrice, buyGear, repairCost, repairGear,
+  GEAR, GEAR_IDS, gearPrice, buyGear, repairCost, repairGear, retinue,
   GRADE_NAMES, gradeOf, foundingCost, opportunityLabel, businessDiagnosis, moveTo, recommendedCapital,
   activeContract, applyForJob, businessesForSale, deliver, jobOffer, openOrders, quitJob, takeOrder,
   buyHome, carryCapacity, found, FOUNDABLE, FOUNDING_COST, hasAccess, ITEM_IDS, leaveHome, ownerOrder, propertiesAt, purchaseBusiness,
@@ -332,22 +332,26 @@ function Armory({ game, b }: { game: Game; b: Business }) {
   const p = state.characters[state.playerId];
   const over = !!state.gameOver;
   const metal = qty(b.stock, 'tools');
+  const men = retinue(state);
+  const [forId, setForId] = useState<string>('');
+  const wearer = forId ? state.characters[forId] : p;
   return (
     <details className="board armory">
       <summary className="sub">Armurerie — {metal} pièce{metal > 1 ? 's' : ''} de métal ouvré en réserve</summary>
       <p className="muted small">Chaque arme ou armure est forgée avec le métal de la forge (ses outils en stock) : si la réserve est vide, il faut attendre qu’elle produise. L’équipement compte en combat et s’use à chaque coup.</p>
+      {men.length > 0 && <label className="small">Pour : <select value={forId} onChange={e => setForId(e.target.value)}><option value="">toi</option>{men.map(c => <option key={c.id} value={c.id}>{fullName(c)} (homme d’armes)</option>)}</select></label>}
       <ul className="orders">
         {GEAR_IDS.map(id => {
           const g = GEAR[id];
           const price = gearPrice(state, b, id);
-          const worn = p.gear?.[g.slot]?.id === id;
+          const worn = wearer?.gear?.[g.slot]?.id === id;
           return (
             <li key={id}>
               <span className="ico">{g.slot === 'weapon' ? '⚔' : '🛡'}</span>
               <div><b>{g.name}</b>{worn && <span className="demand forte">porté</span>}
                 <div className="muted small">{g.attack ? `attaque +${g.attack}` : ''}{g.attack && g.defense ? ' · ' : ''}{g.defense ? `défense +${g.defense}` : ''} · {g.note}</div>
                 <div className="muted small">{price} d · {g.units} pièce{g.units > 1 ? 's' : ''} de métal{metal < g.units ? ' (réserve insuffisante)' : ''}</div></div>
-              <button className="btn sm" disabled={over || p.money < price || metal < g.units} onClick={() => act(s => buyGear(s, b.id, id))}>Forger</button>
+              <button className="btn sm" disabled={over || p.money < price || metal < g.units} onClick={() => act(s => buyGear(s, b.id, id, forId || undefined))}>Forger</button>
             </li>
           );
         })}

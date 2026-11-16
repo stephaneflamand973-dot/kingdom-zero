@@ -12,6 +12,7 @@ import { logEvent } from './events';
 import { freeMembers, lawOnRoad } from './gangs';
 import { addWanted } from './justice';
 import { houseOf, isJailed, joinOrg, leaveOrg, orgsOf } from './orgs';
+import { roadPath } from './util';
 import { finish, guard } from './player';
 import { chronicle } from './quests';
 import { chance } from './rng';
@@ -74,7 +75,7 @@ export function leaveGang(state: GameState): ActionResult {
 export function playerGangShare(state: GameState, g: Organization): number {
   const p = state.characters[state.playerId];
   if (!p?.alive || !g.members.includes(p.id) || isJailed(state, p)) return 0;
-  const share = Math.floor(g.treasury / (2 * Math.max(2, g.members.length)));
+  const share = Math.floor(g.treasury / (2 * Math.max(2, g.members.length))) * (g.leaderId === p.id ? 2 : 1); // le chef : double part
   if (share <= 0 || !transferMoney(state, P.o(g.id), P.c(p.id), share)) return 0;
   logEvent(state, { type: 'dividend', actorId: p.id, importance: 2, text: `Ta part du butin de ${g.name} : ${share} d.`, witnesses: [p.id] });
   return share;
@@ -253,7 +254,7 @@ export function muster(state: GameState, houseId: string): ActionResult {
 export function musteredFor(state: GameState, houseId: string): Character[] {
   const m = state.muster;
   const p = state.characters[state.playerId];
-  if (!m || m.houseId !== houseId || !p?.alive || state.observer || isJailed(state, p)) return [];
+  if (!m || m.houseId !== houseId || !p?.alive || state.observer || isJailed(state, p) || state.orgs[houseId]?.leaderId === p.id) return [];
   if (toDate(state.time).day - m.day > 8) return [];
   return [p, ...retinue(state, p).filter(c => !isJailed(state, c) && c.health > 25)];
 }
@@ -263,6 +264,7 @@ export function afterBattle(state: GameState, houseId: string, won: boolean): vo
   const m = state.muster;
   if (!m || m.houseId !== houseId) return;
   state.muster = undefined;
+  if (state.orgs[houseId]?.leaderId === state.playerId) return; // on ne se paie pas soi-même
   const p = state.characters[state.playerId];
   const house = state.orgs[houseId];
   if (!p?.alive || !house) return;
@@ -273,4 +275,142 @@ export function afterBattle(state: GameState, houseId: string, won: boolean): vo
   const text = `${fullName(p)} combat pour ${house.name}${won ? ' et partage la victoire' : ''}${pay ? ` (${pay} d de récompense)` : ''}.`;
   logEvent(state, { type: 'battle', actorId: p.id, importance: 3, text, witnesses: lord ? [lord.id, p.id] : [p.id] });
   chronicle(state, text);
+}
+
+// ── Phase 11 bis : chef de bande, maison du joueur, guerres déclarées ──
+
+/** Défier le chef de la bande en duel (un contre un). Vainqueur : on prend la tête de la bande. */
+export function challengeGangLeader(state: GameState): ActionResult {
+  const g0 = guard(state); if (g0) return g0;
+  const p = state.characters[state.playerId];
+  const g = gangOf(state, p);
+  if (!g) return no('Tu n’appartiens à aucune bande.');
+  if (g.leaderId === p.id) return no('Tu mènes déjà la bande.');
+  const chief = g.leaderId ? state.characters[g.leaderId] : undefined;
+  if (chief && (!chief.alive || isJailed(state, chief))) {
+    g.leaderId = p.id; g.roles[p.id] = 'chef';
+    chronicle(state, `${fullName(p)} prend la tête de ${g.name}, son chef étant hors d'état.`);
+    return ok(`${chief.firstName} n’est plus là pour mener la bande : tu en prends la tête.`, 0);
+  }
+  if (!chief) { g.leaderId = p.id; g.roles[p.id] = 'chef'; return ok(`La bande n’avait plus de chef : tu en prends la tête.`, 0); }
+  if (chief.locationId !== p.locationId) return no(`Il faut défier ${chief.firstName} en face, là où il se trouve (${state.locations[chief.locationId]?.name}).`);
+  if (p.needs.energy < 30 || p.health < 50) return no('Tu n’es pas en état de te battre.');
+  const A = [fighterOf(p)], B = [fighterOf(chief)];
+  const r = autoBattle(state, A, B, 10);
+  p.health = clamp(Math.max(A[0].hp, 10), 0, 100);
+  chief.health = clamp(Math.max(B[0].hp, 10), 0, 100);
+  finish(state, p, 30);
+  const won = r.winner === 'a' || (r.winner === 'none' && A[0].hp > B[0].hp);
+  if (won) {
+    g.leaderId = p.id; g.roles[p.id] = 'chef'; g.roles[chief.id] = 'membre';
+    for (const id of g.members) if (id !== p.id && id !== chief.id) modifyRelation(state, id, p.id, 6, 4);
+    modifyRelation(state, chief.id, p.id, -35, -20);
+    const text = `${fullName(p)} défie ${fullName(chief)} et prend la tête de ${g.name}.`;
+    logEvent(state, { type: 'succession', actorId: p.id, targetId: chief.id, importance: 3, text, witnesses: g.members.slice() });
+    chronicle(state, text);
+    return ok(`Tu terrasses ${chief.firstName} : la bande est à toi. Tu touches désormais une double part, et la bande rançonne les commerces sur ton ordre.`, 30);
+  }
+  modifyRelation(state, chief.id, p.id, -15, -15);
+  for (const id of g.members) if (id !== p.id && id !== chief.id) modifyRelation(state, id, p.id, -4, -4);
+  return ok(`${chief.firstName} a le dessus. Tu restes dans la bande, humilié. Santé : ${Math.round(p.health)}.`, 30);
+}
+
+export const HOUSE_FOUNDING = 400;
+
+export function houseOfPlayer(state: GameState): Organization | undefined {
+  return Object.values(state.orgs).find(o => o.kind === 'house' && !o.dissolved && o.leaderId === state.playerId);
+}
+
+/** Fonder sa maison : il faut un titre (écuyer ou conseiller) et 400 d pour son trésor. */
+export function foundHouse(state: GameState): ActionResult {
+  const g0 = guard(state); if (g0) return g0;
+  const p = state.characters[state.playerId];
+  if (houseOfPlayer(state)) return no('Ta maison existe déjà.');
+  if (!p.title) return no('Seul un homme titré (écuyer ou conseiller) peut lever bannière et fonder une maison.');
+  if (gangOf(state, p)) return no('Un chef de maison ne peut appartenir à une bande : quitte-la d’abord.');
+  if (p.money < HOUSE_FOUNDING) return no(`Il te faut ${HOUSE_FOUNDING} d pour doter le trésor de ta maison.`);
+  const sid = settlementIdOf(state, p.locationId);
+  // on quitte la garnison ou la maison que l'on servait
+  for (const o of orgsOf(state, p.id, 'house')) leaveOrg(state, o, p);
+  state.idSeq += 1;
+  const id = `h_p${state.idSeq}`;
+  const house: Organization = {
+    id, name: `Maison ${p.lastName.startsWith('de ') ? p.lastName : `de ${p.lastName}`}`, kind: 'house', leaderId: p.id, members: [p.id], roles: { [p.id]: 'seigneur' },
+    treasury: 0, stash: {}, seatId: sid, founded: toDate(state.time).day, relations: {}, heat: 0, dues: 0, patrolRoads: [], service: {},
+  };
+  for (const o of Object.values(state.orgs)) if (o.kind === 'house' && !o.dissolved) { house.relations[o.id] = -10; o.relations[id] = -10; }
+  state.orgs[id] = house;
+  state.orgOrder.push(id);
+  transferMoney(state, P.c(p.id), P.o(id), HOUSE_FOUNDING);
+  // les hommes d'armes du joueur deviennent les soldats de sa maison
+  // (désormais soldés chaque semaine par le trésor de la maison, et non plus chaque jour par le joueur)
+  for (const c of retinue(state, p)) { joinOrg(state, house, c, 'soldat'); c.captainId = undefined; }
+  // le conjoint et les enfants adultes en sont membres ; l'héritier désigné en est l'héritier
+  const heirId = state.dynasty.designatedHeir ?? p.childIds.find(k => state.characters[k]?.alive);
+  if (p.spouseId && state.characters[p.spouseId]?.alive) joinOrg(state, house, state.characters[p.spouseId], 'vassal');
+  if (heirId && state.characters[heirId]?.alive) joinOrg(state, house, state.characters[heirId], 'heritier');
+  const text = `${fullName(p)} lève bannière et fonde la ${house.name}, à ${state.settlements[sid].name}.`;
+  logEvent(state, { type: 'title', actorId: p.id, importance: 3, locationId: state.settlements[sid].squareId, text, witnesses: residents(state, sid).map(c => c.id) });
+  chronicle(state, text);
+  finish(state, p, 120);
+  return ok(`${text} Ses ${house.members.length - 1} premiers membres te suivent. Sans terre, ta maison ne perçoit pas de tribut : il faudra conquérir un fief.`, 120);
+}
+
+/** Le joueur, seigneur de sa maison, déclare la guerre pour prendre une localité voisine de son siège. */
+export function declareWar(state: GameState, targetSettlementId: string): ActionResult {
+  const g0 = guard(state); if (g0) return g0;
+  const p = state.characters[state.playerId];
+  const house = houseOfPlayer(state);
+  if (!house) return no('Il faut d’abord fonder ta maison.');
+  if (state.wars.some(w => w.status === 'active')) return no('Une guerre est déjà en cours dans la région.');
+  const st = state.settlements[targetSettlementId];
+  const def = st ? state.orgs[st.lordHouseId] : undefined;
+  if (!st || !def || def.id === house.id || def.dissolved) return no('Cette localité n’a pas de seigneur à défier.');
+  const near = st.id === house.seatId || state.settlementOrder.some(o => (o === house.seatId || state.settlements[o].lordHouseId === house.id) && roadPath(state, o, st.id)?.roads.length === 1);
+  if (!near) return no('Trop loin de tes terres pour mener campagne.');
+  const lastEnd = Math.max(-999, ...state.wars.filter(w => [w.attackerId, w.defenderId].includes(house.id) && [w.attackerId, w.defenderId].includes(def.id)).map(w => w.endDay ?? -999));
+  if (toDate(state.time).day - lastEnd < 112) return no('Une trêve d’un an court encore avec cette maison.');
+  state.idSeq += 1;
+  state.wars.push({ id: `w${state.idSeq}`, attackerId: house.id, defenderId: def.id, targetSettlementId: st.id, startDay: toDate(state.time).day, victories: { attacker: 0, defender: 0 }, battles: 0, status: 'active' });
+  house.relations[def.id] = -80; def.relations[house.id] = -80;
+  const lord = def.leaderId ? state.characters[def.leaderId] : undefined;
+  const text = `${fullName(p)} déclare la guerre à ${def.name} et revendique ${st.name}.`;
+  logEvent(state, { type: 'war', actorId: p.id, targetId: lord?.id, locationId: st.squareId, importance: 3, text, witnesses: state.characterOrder.filter(id => state.characters[id].alive) });
+  chronicle(state, text);
+  return ok(`${text} Une bataille chaque lundi devant ${st.name} ; deux victoires emportent la place. Toi et tes soldats combattrez.`, 0);
+}
+
+/** Combattants qu'une maison menée par le joueur apporte en personne : lui et ses hommes d'armes qui ne sont pas déjà soldats. */
+export function ownHost(state: GameState, house: Organization): Character[] {
+  const p = state.characters[state.playerId];
+  if (!p?.alive || house.leaderId !== p.id || isJailed(state, p) || state.observer) return [];
+  return [p, ...retinue(state, p).filter(c => !house.members.includes(c.id) && !isJailed(state, c) && c.health > 25)];
+}
+
+/** Verser ou reprendre de l'argent au trésor de sa maison (soldes des soldats, guerres). */
+export function houseTreasury(state: GameState, amount: number): ActionResult {
+  const p = state.characters[state.playerId];
+  const h = houseOfPlayer(state);
+  if (!h) return no('Tu n’as pas de maison.');
+  if (amount > 0) {
+    const n = Math.min(amount, p.money);
+    if (n <= 0) return no('Ta bourse est vide.');
+    transferMoney(state, P.c(p.id), P.o(h.id), n);
+    return ok(`Tu verses ${n} d au trésor de ${h.name} (${h.treasury} d).`, 0);
+  }
+  const n = Math.min(-amount, h.treasury);
+  if (n <= 0) return no('Le trésor de ta maison est vide.');
+  transferMoney(state, P.o(h.id), P.c(p.id), n);
+  return ok(`Tu prends ${n} d au trésor de ${h.name}.`, 0);
+}
+
+/** Localités que la maison du joueur peut revendiquer (son siège, ou voisines de ses terres). */
+export function warTargets(state: GameState): string[] {
+  const h = houseOfPlayer(state);
+  if (!h) return [];
+  return state.settlementOrder.filter(id => {
+    const st = state.settlements[id];
+    if (st.lordHouseId === h.id) return false;
+    return id === h.seatId || state.settlementOrder.some(o => (o === h.seatId || state.settlements[o].lordHouseId === h.id) && roadPath(state, o, id)?.roads.length === 1);
+  });
 }

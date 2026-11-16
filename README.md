@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 160 tests automatisés (scénarios A–G, phases 2 à 11, invariants, fuzz) |
+| `npm test` | 167 tests automatisés (scénarios A–G, phases 2 à 11, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -580,6 +580,24 @@ ensuite (60 d en cas de victoire, 20 d sinon) et le seigneur s'en souvient. Le f
 
 Onglet **Pouvoir** : vos hommes d'armes, les habitants prêts à s'engager ici, votre bande et ses actions.
 
+### Phase 11 (suite) — les limites levées
+
+- **Chef de bande.** Membre de la bande, on peut défier son chef en duel (là où il se trouve) : vainqueur, on
+  prend la tête (double part du butin, racket hebdomadaire des commerces sur son ordre) ; vaincu, on reste,
+  humilié. Le chef déchu reste dans la bande et en garde rancune.
+- **Fonder sa maison.** Un écuyer ou un conseiller peut lever bannière (400 d pour le trésor). Ses hommes d'armes
+  deviennent les soldats de sa maison (soldés chaque semaine par elle), son conjoint et son héritier en sont
+  membres. On verse ou reprend de l'argent au trésor, et l'on **déclare la guerre** pour une localité voisine :
+  le joueur, ses soldats et ses hommes d'armes combattent chaque lundi ; deux victoires donnent un **fief** qui
+  paie tribut. À la mort du joueur, sa maison passe à celui qui reprend la lignée (dissoute si personne).
+- **Équiper ses hommes d'armes.** À l'armurerie, on choisit pour qui l'on fait forger : une épée forgée pour un
+  homme d'armes remplace son fourniment de base ; son équipement s'use quand il combat à vos côtés.
+- **Guerres moins rares.** Une maison dépossédée **revendique** la terre perdue : elle y lève des partisans, la
+  population conquise supporte mal le joug étranger pendant deux ans, et une révolte rappelle l'ancienne maison.
+  Elle tente de reconquérir au début d'une saison sur deux environ, après une trêve d'un an. Une bataille
+  indécise se juge à qui a le mieux tenu le terrain. Mesuré sur 16 ans (6 mondes) : **3 à 10 guerres** au lieu
+  de 1 à 4, sans mort de faim et aux bilans exacts.
+
 ## État réel du développement
 
 ### Implémenté et testé
@@ -627,8 +645,8 @@ les dialogues (le moteur restera l’autorité sur les faits).
   être attaqués par les brigands.
 - Le son est volontairement simple (synthèse) ; la vérification mesure qu'un signal est produit, pas sa
   qualité à l'oreille.
-- Le joueur ne peut pas devenir chef de la bande ni fonder sa propre maison noble ; les PNJ civils n'achètent pas d'armes ;
-  les hommes d'armes n'ont pas d'équipement propre (seulement leur valeur au combat).
+- Les reconquêtes des maisons exilées échouent le plus souvent (peu de partisans, pas de tribut) ; les PNJ civils
+  n'achètent pas d'armes ; il n'y a que deux maisons nobles à l'origine (plus celle du joueur).
 - Carrière : seul le joueur a des grades (les PNJ gardent un salaire unique par atelier). Un joueur qui
   thésaurise sans rien dépenser finit par assécher les caisses des ateliers, qui ne peuvent plus le payer :
   c'est la conséquence de l'économie fermée, visible surtout au pilote automatique.

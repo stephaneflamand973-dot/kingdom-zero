@@ -2,7 +2,7 @@
 // Noblesse et gouvernement (phase 4) : tribut, garnison, impôts, grogne et révoltes,
 // diplomatie entre maisons, guerres et conquêtes, complots, guilde des marchands.
 // ─────────────────────────────────────────────────────────────
-import { afterBattle, musteredFor } from './warband';
+import { afterBattle, musteredFor, ownHost } from './warband';
 import { applyWounds, autoBattle, fighterOf, strength } from './combat';
 import { P, reserveFor, transferMoney } from './economy';
 import { logEvent } from './events';
@@ -13,7 +13,7 @@ import { chance } from './rng';
 import { killCharacter } from './sim';
 import { modifyRelation } from './social';
 import { toDate } from './time';
-import type { GameState, Organization, Settlement, War } from './types';
+import type { Character, GameState, Organization, Settlement, War } from './types';
 import { aliveCharacters, businessesIn, fullName, hasTrait, manorOf, newId, residents, roadPath, settlementIdOf } from './util';
 
 export const SOLDIER_PAY = 40;
@@ -41,7 +41,11 @@ export function computeUnrest(state: GameState, st: Settlement): number {
   const crimes = state.events.filter(e => (e.type === 'ambush' || e.type === 'racket' || e.type === 'vandalism' || e.type === 'theft')
     && toDate(e.time).day >= day - 28 && e.locationId && settlementIdOf(state, e.locationId) === st.id).length;
   const war = activeWar(state, st.lordHouseId) ? 15 : 0;
-  const v = hunger * 0.35 + st.taxRate * 250 + Math.min(20, crimes * 1.5) + (100 - st.prosperity) * 0.25 + war;
+  // joug étranger (phase 11) : une terre conquise regrette sa maison tant que celle-ci la revendique, pendant deux ans
+  const conquest = state.wars.filter(w => w.targetSettlementId === st.id && w.attackerId === st.lordHouseId && w.outcome?.includes('empare')).map(w => w.endDay ?? 0).sort((a, b) => b - a)[0];
+  const claimed = orgList(state, 'house').some(h => h.claimId === st.id && h.id !== st.lordHouseId && h.leaderId && state.characters[h.leaderId]?.alive);
+  const yoke = claimed && conquest !== undefined && day - conquest < 224 ? Math.round(30 * (1 - (day - conquest) / 224)) : 0;
+  const v = hunger * 0.35 + st.taxRate * 250 + Math.min(20, crimes * 1.5) + (100 - st.prosperity) * 0.25 + war + yoke;
   return Math.round(Math.max(0, Math.min(100, v)));
 }
 
@@ -103,7 +107,9 @@ export function weeklyGovernance(state: GameState): void {
     const affordable = Math.floor(house.treasury / (SOLDIER_PAY * 6));
     const soldiers = house.members.filter(id => house.roles[id] === 'soldat' && state.characters[id]?.alive).length;
     if (soldiers < Math.min(wanted, affordable)) {
-      const recruit = lands.flatMap(st => residents(state, st.id))
+      // une maison dépossédée lève ses fidèles sur la terre qu'elle revendique (phase 11)
+      const pool = house.claimId && state.settlements[house.claimId] && !lands.some(l => l.id === house.claimId) ? [...lands, state.settlements[house.claimId]] : lands;
+      const recruit = pool.flatMap(st => residents(state, st.id))
         .filter(c => !c.employerId && c.age >= 17 && c.age < 45 && c.health > 60 && !isJailed(state, c)
           && !orgList(state).some(o => o.members.includes(c.id)) && !state.wanted.some(w => w.characterId === c.id))
         .sort((a, b) => b.skills.combat + b.attributes.force * 3 - (a.skills.combat + a.attributes.force * 3) || (a.id < b.id ? -1 : 1))[0];
@@ -137,13 +143,46 @@ export function weeklyGovernance(state: GameState): void {
         logEvent(state, { type: 'revolt', actorId: lord.id, locationId: st.squareId, importance: 3,
           text: `Révolte à ${st.name} (grogne ${st.unrest}) : les habitants refusent l'impôt pour deux semaines. ${fullName(lord)} abaisse la taxe à ${Math.round(st.taxRate * 100)} %.`,
           witnesses: aliveCharacters(state).map(c => c.id) });
+        uprising(state, st, house);
       }
     }
   }
   diplomacy(state);
+  // une maison exilée tente de reprendre sa terre, au début d'une saison sur deux environ (phase 11)
+  if (toDate(state.time).dayOfSeason <= 7 && !activeWar(state)) {
+    for (const h of orgList(state, 'house')) {
+      const st = h.claimId ? state.settlements[h.claimId] : undefined;
+      const ruler = st ? state.orgs[st.lordHouseId] : undefined;
+      if (st && ruler && ruler.id !== h.id && chance(state, 0.5)) { uprising(state, st, ruler); if (activeWar(state)) break; }
+    }
+  }
   warWeek(state);
   guildWeek(state);
 }
+
+// ── Soulèvement (phase 11) ──────────────────────────────────
+
+/** Une révolte dans une terre conquise rappelle la maison qui la revendique : elle lève des volontaires et attaque. */
+function uprising(state: GameState, st: Settlement, ruler: Organization): void {
+  const claimant = orgList(state, 'house').find(h => h.claimId === st.id && h.id !== ruler.id && h.leaderId && state.characters[h.leaderId]?.alive);
+  if (!claimant || activeWar(state)) return;
+  const day = toDate(state.time).day;
+  const lastEnd = Math.max(-999, ...state.wars.filter(w => [w.attackerId, w.defenderId].includes(claimant.id) && [w.attackerId, w.defenderId].includes(ruler.id)).map(w => w.endDay ?? -999));
+  if (day - lastEnd < 112) return;
+  const claimLord = state.characters[claimant.leaderId!];
+  if (claimLord.isPlayer) return; // le joueur décide lui-même de ses guerres
+  // des volontaires parmi les mécontents rejoignent l'ancienne maison
+  const volunteers = residents(state, st.id).filter(c => !c.employerId && c.age >= 17 && c.age < 50 && c.health > 60 && !isJailed(state, c)
+    && !orgList(state).some(o => o.members.includes(c.id)) && getRelationAff(c, claimLord.id) >= 0).slice(0, 3);
+  if (volunteers.length + soldiersOf(state, claimant).length < 3) return; // pas assez de partisans pour tenter le coup
+  for (const v of volunteers) { joinOrg(state, claimant, v, 'soldat'); v.profession = 'soldat'; v.goal = { kind: 'servir' }; }
+  const war: War = { id: newId(state, 'w'), attackerId: claimant.id, defenderId: ruler.id, targetSettlementId: st.id, startDay: day, victories: { attacker: 0, defender: 0 }, battles: 0, status: 'active' };
+  state.wars.push(war);
+  logEvent(state, { type: 'war', actorId: claimLord.id, locationId: st.squareId, importance: 3,
+    text: `${st.revoltUntilDay !== undefined && st.revoltUntilDay >= day ? 'Profitant de la révolte, ' : ''}${fullName(claimLord)} revient revendiquer ${st.name}${volunteers.length ? ` avec ${volunteers.length} volontaire${volunteers.length > 1 ? 's' : ''} du pays` : ''} : c'est la guerre contre ${ruler.name}.`,
+    witnesses: aliveCharacters(state).map(c => c.id) });
+}
+const getRelationAff = (c: Character, id: string) => c.relations[id]?.affinity ?? 0;
 
 // ── Diplomatie et guerre ────────────────────────────────────
 
@@ -167,11 +206,17 @@ function diplomacy(state: GameState): void {
     setRelation(a, b, relation(a, b) + d);
     // Déclaration de guerre : rancune profonde, chef belliqueux, nette supériorité, cible voisine
     if (activeWar(state)) continue;
+    // trêve : un an sans nouvelle guerre entre les deux mêmes maisons (phase 11)
+    const lastEnd = Math.max(-999, ...state.wars.filter(w => (w.attackerId === a.id && w.defenderId === b.id) || (w.attackerId === b.id && w.defenderId === a.id)).map(w => w.endDay ?? -999));
+    if (toDate(state.time).day - lastEnd < 112) continue;
     for (const [att, def, lord] of [[a, b, la], [b, a, lb]] as const) {
-      if (relation(att, def) > -60 || !(hasTrait(lord, 'ambitieux') || hasTrait(lord, 'colerique'))) continue;
+      if (lord.isPlayer) continue; // le joueur déclare ses guerres lui-même
+      const claim = att.claimId && state.settlements[att.claimId]?.lordHouseId === def.id ? state.settlements[att.claimId] : undefined;
+      // une maison dépossédée veut reprendre ses terres, même sans être belliqueuse
+      if (relation(att, def) > -60 || !(claim || hasTrait(lord, 'ambitieux') || hasTrait(lord, 'colerique'))) continue;
       const sa = militaryStrength(state, att) + att.treasury / 100, sd = militaryStrength(state, def) + def.treasury / 100;
-      if (sa < sd * 1.1) continue;
-      const target = landsOf(state, def).find(st => landsOf(state, att).some(own => roadPath(state, own.id, st.id)?.roads.length === 1));
+      if (sa < sd * (claim ? 0.8 : 1.1)) continue;
+      const target = claim ?? landsOf(state, def).find(st => landsOf(state, att).some(own => roadPath(state, own.id, st.id)?.roads.length === 1));
       if (!target) continue;
       const war: War = { id: newId(state, 'w'), attackerId: att.id, defenderId: def.id, targetSettlementId: target.id, startDay: toDate(state.time).day, victories: { attacker: 0, defender: 0 }, battles: 0, status: 'active' };
       state.wars.push(war);
@@ -189,7 +234,7 @@ function warWeek(state: GameState): void {
   const att = state.orgs[war.attackerId], def = state.orgs[war.defenderId];
   const target = state.settlements[war.targetSettlementId];
   // le joueur peut avoir promis son épée et ses hommes à l'un des camps (phase 11)
-  const A = [...soldiersOf(state, att), ...musteredFor(state, att.id)], D = [...soldiersOf(state, def), ...musteredFor(state, def.id)];
+  const A = [...soldiersOf(state, att), ...musteredFor(state, att.id), ...ownHost(state, att)], D = [...soldiersOf(state, def), ...musteredFor(state, def.id), ...ownHost(state, def)];
   war.battles += 1;
   let winner: 'a' | 'b' | 'none';
   let dead: string[] = [];
@@ -198,7 +243,13 @@ function warWeek(state: GameState): void {
   else if (!A.length) winner = 'b';
   else {
     const fa = A.map(fighterOf), fd = D.map(fighterOf);
+    const hpA0 = fa.reduce((s, f) => s + f.hp, 0), hpD0 = fd.reduce((s, f) => s + f.hp, 0);
     winner = autoBattle(state, fa, fd, 8).winner;
+    // une journée indécise se juge à qui a le mieux tenu le terrain (phase 11)
+    if (winner === 'none') {
+      const ra = fa.reduce((s, f) => s + f.hp, 0) / Math.max(1, hpA0), rd = fd.reduce((s, f) => s + f.hp, 0) / Math.max(1, hpD0);
+      if (Math.abs(ra - rd) > 0.08) winner = ra > rd ? 'a' : 'b';
+    }
     dead = applyWounds(state, [...fa, ...fd], 0.3);
   }
   if (winner === 'a') war.victories.attacker += 1;
@@ -213,6 +264,9 @@ function warWeek(state: GameState): void {
   if (war.victories.attacker >= 2) {
     war.status = 'ended';
     war.outcome = `${att.name} s'empare de ${target.name}`;
+    war.endDay = toDate(state.time).day;
+    def.claimId = target.id; // la maison dépossédée revendiquera sa terre
+    if (att.claimId === target.id) att.claimId = undefined;
     target.lordHouseId = att.id;
     setRelation(att, def, -70);
     const lord = att.leaderId ? state.characters[att.leaderId] : undefined;
@@ -221,9 +275,10 @@ function warWeek(state: GameState): void {
       text: `${target.name} passe sous la domination de ${att.name}. Le tribut ira désormais à ${lord ? fullName(lord) : att.name}.`, witnesses: aliveCharacters(state).map(c => c.id) });
   } else if (war.victories.defender >= 2 || war.battles >= 6 || att.treasury < 20) {
     war.status = 'ended';
+    war.endDay = toDate(state.time).day;
     const indemnity = Math.floor(att.treasury * 0.25);
     if (indemnity > 0) transferMoney(state, P.o(att.id), P.o(def.id), indemnity);
-    war.outcome = `paix ; ${att.name} verse ${indemnity} d`;
+    war.outcome = indemnity > 0 ? `paix ; ${att.name} verse ${indemnity} d` : `paix ; ${att.name} est repoussée`;
     setRelation(att, def, -30);
     logEvent(state, { type: 'peace', locationId: target.squareId, importance: 3,
       text: `Paix entre ${att.name} et ${def.name} : ${target.name} reste à ${def.name}${indemnity ? `, ${att.name} paie ${indemnity} d d'indemnité` : ''}.`, witnesses: aliveCharacters(state).map(c => c.id) });

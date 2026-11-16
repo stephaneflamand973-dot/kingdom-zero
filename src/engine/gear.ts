@@ -52,13 +52,16 @@ function forgeAt(state: GameState, businessId: string, p: Character): { forge?: 
   return { forge: b };
 }
 
-export function buyGear(state: GameState, businessId: string, id: GearId): ActionResult {
+export function buyGear(state: GameState, businessId: string, id: GearId, forId?: string): ActionResult {
   const g0 = guard(state); if (g0) return g0;
   const p = state.characters[state.playerId];
+  // le joueur peut équiper un de ses hommes d'armes (phase 11)
+  const wearer = forId ? state.characters[forId] : p;
+  if (!wearer?.alive || (forId && wearer.captainId !== p.id)) return { ok: false, message: 'Tu ne peux équiper que toi-même ou tes hommes d’armes.', minutes: 0 };
   const { forge, error } = forgeAt(state, businessId, p);
   if (!forge) return { ok: false, message: error!, minutes: 0 };
   const g = GEAR[id];
-  if (p.gear?.[g.slot]?.id === id && (p.gear[g.slot]!.wear ?? 0) === 0) return { ok: false, message: `Tu portes déjà ${g.name.toLowerCase()} en bon état.`, minutes: 0 };
+  if (wearer.gear?.[g.slot]?.id === id && (wearer.gear[g.slot]!.wear ?? 0) === 0) return { ok: false, message: `${forId ? `${wearer.firstName} porte` : 'Tu portes'} déjà ${g.name.toLowerCase()} en bon état.`, minutes: 0 };
   if (qty(forge.stock, 'tools') < g.units) return { ok: false, message: `${forge.name} n’a pas assez de métal ouvré (${qty(forge.stock, 'tools')}/${g.units} pièces) : reviens quand la forge aura produit.`, minutes: 0 };
   const price = gearPrice(state, forge, id);
   if (p.money < price) return { ok: false, message: `Il te faut ${price} d.`, minutes: 0 };
@@ -66,11 +69,12 @@ export function buyGear(state: GameState, businessId: string, id: GearId): Actio
   // le métal est réellement tiré du stock de la forge
   addItem(forge.stock, 'tools', -g.units);
   addItem(state.ledger.consumed, 'tools', g.units);
-  (p.gear ??= {})[g.slot] = { id, wear: 0 };
+  (wearer.gear ??= {})[g.slot] = { id, wear: 0 };
   logEvent(state, { type: 'trade', actorId: p.id, businessId: forge.id, locationId: forge.locationId, importance: 2,
-    text: `${fullName(p)} se fait forger ${g.name.toLowerCase()} à ${forge.name} (${price} d).`, witnesses: forge.ownerId ? [forge.ownerId] : [] });
+    text: `${fullName(p)} fait forger ${g.name.toLowerCase()} ${forId ? `pour ${fullName(wearer)} ` : ''}à ${forge.name} (${price} d).`, witnesses: forge.ownerId ? [forge.ownerId] : [] });
   if (forge.ownerId) modifyRelation(state, forge.ownerId, p.id, 2, 2);
   finish(state, p, 30);
+  if (forId) return { ok: true, message: `${wearer.firstName} reçoit ${g.name.toLowerCase()} (${g.attack ? `attaque +${g.attack}` : ''}${g.attack && g.defense ? ', ' : ''}${g.defense ? `défense +${g.defense}` : ''}). ${price} d payés à ${forge.name}.`, minutes: 30 };
   return { ok: true, message: `Te voilà équipé : ${g.name} (${g.attack ? `attaque +${g.attack}` : ''}${g.attack && g.defense ? ', ' : ''}${g.defense ? `défense +${g.defense}` : ''}). ${price} d payés à ${forge.name}.`, minutes: 30 };
 }
 
