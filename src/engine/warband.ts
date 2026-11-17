@@ -7,11 +7,12 @@
 // ─────────────────────────────────────────────────────────────
 import { applyWounds, autoBattle, fighterOf, type Fighter } from './combat';
 import { ITEMS, ITEM_IDS } from './data';
-import { P, transferMoney } from './economy';
+import { fireEmployee, P, transferMoney } from './economy';
 import { logEvent } from './events';
 import { freeMembers, lawOnRoad } from './gangs';
 import { addWanted } from './justice';
-import { houseOf, isJailed, joinOrg, leaveOrg, orgsOf } from './orgs';
+import { houseOf, isJailed, joinOrg, leaveOrg, orgsOf, soldiersOf } from './orgs';
+import { SOLDIER_PAY } from './nobility';
 import { roadPath } from './util';
 import { finish, guard } from './player';
 import { chronicle } from './quests';
@@ -154,12 +155,23 @@ export const RETINUE_BOUNTY = 15;   // prime d'engagement
 export function retinue(state: GameState, c: Character = state.characters[state.playerId]): Character[] {
   return state.characterOrder.map(id => state.characters[id]).filter(x => x.alive && x.captainId === c.id);
 }
-export function retinueCap(c: Character): number { return c.title === 'conseiller' ? 6 : c.title === 'ecuyer' ? 4 : 2; }
+export function retinueCap(c: Character, state?: GameState): number {
+  // un seigneur à la tête d'une maison mène une escorte plus nombreuse, titre ou non
+  if (state && Object.values(state.orgs).some(o => o.kind === 'house' && !o.dissolved && o.leaderId === c.id)) return 8;
+  return c.title === 'conseiller' ? 6 : c.title === 'ecuyer' ? 4 : 2;
+}
 
 /** Qui peut être engagé ici : un adulte valide sans emploi, présent, qui ne déteste pas le joueur. */
 export function recruitsHere(state: GameState): Character[] {
   const p = state.characters[state.playerId];
-  return residents(state, settlementIdOf(state, p.locationId)).filter(c => c.locationId === p.locationId && !c.employerId && !c.masterId && !c.captainId
+  return recruitable(state).filter(c => c.locationId === p.locationId);
+}
+
+/** Adultes valides sans emploi de la localité où se trouve le joueur, qui ne le détestent pas. */
+function recruitable(state: GameState, employedFriends = false): Character[] {
+  const p = state.characters[state.playerId];
+  // à l'appel du seigneur, un travailleur qui ne lui est pas hostile peut quitter sa place pour la garnison (la solde est sûre)
+  return residents(state, settlementIdOf(state, p.locationId)).filter(c => !c.isPlayer && (!c.employerId || (employedFriends && getRelation(state, c.id, p.id).affinity >= 0 && getRelation(state, c.id, p.id).trust >= 0)) && !c.masterId && !c.captainId
     && c.age >= 16 && c.age < 55 && c.sick === 0 && c.health > 60 && c.profession !== 'seigneur' && !isJailed(state, c)
     && !state.orgOrder.some(id => state.orgs[id].members.includes(c.id))
     && !state.businessOrder.some(id => state.businesses[id].ownerId === c.id)
@@ -171,7 +183,7 @@ export function hireManAtArms(state: GameState, npcId: string): ActionResult {
   const p = state.characters[state.playerId];
   const c = state.characters[npcId];
   if (!c || !recruitsHere(state).some(x => x.id === npcId)) return no('Cette personne ne peut pas s’engager à ton service.');
-  if (retinue(state, p).length >= retinueCap(p)) return no(`Tu ne peux pas commander plus de ${retinueCap(p)} hommes${p.title ? '' : ' sans titre (un écuyer en mène quatre, un conseiller six)'}.`);
+  if (retinue(state, p).length >= retinueCap(p, state)) return no(`Tu ne peux pas commander plus de ${retinueCap(p, state)} hommes${p.title || houseOfPlayer(state) ? '' : ' sans titre (un écuyer en mène quatre, un conseiller six)'}.`);
   if (p.money < RETINUE_BOUNTY + RETINUE_PAY) return no(`Il te faut ${RETINUE_BOUNTY} d de prime d’engagement et de quoi payer la première journée (${RETINUE_PAY} d).`);
   transferMoney(state, P.c(p.id), P.c(c.id), RETINUE_BOUNTY);
   c.captainId = p.id;
@@ -413,4 +425,59 @@ export function warTargets(state: GameState): string[] {
     if (st.lordHouseId === h.id) return false;
     return id === h.seatId || state.settlementOrder.some(o => (o === h.seatId || state.settlements[o].lordHouseId === h.id) && roadPath(state, o, id)?.roads.length === 1);
   });
+}
+
+// ── Lever les soldats de sa maison (phase 12 bis) ───────────
+
+/** Effectif maximal de la garnison d'une maison menée par le joueur : 4, plus 2 par terre tenue (12 au plus). */
+export function garrisonCap(state: GameState, house: Organization): number {
+  const lands = state.settlementOrder.filter(id => state.settlements[id].lordHouseId === house.id).length;
+  return Math.min(12, 4 + 2 * lands);
+}
+
+/** Soldats de métier de la maison (soldés par son trésor ; les gardes, eux, sont payés par l'intendance). */
+export function garrison(state: GameState, house: Organization): Character[] {
+  return soldiersOf(state, house).filter(c => !c.isPlayer && c.profession === 'soldat');
+}
+
+/** Candidats à la garnison : les adultes valides sans emploi de la localité où se trouve le seigneur (le crieur fait savoir). */
+export function soldierRecruits(state: GameState): Character[] {
+  return houseOfPlayer(state) ? recruitable(state, true) : [];
+}
+
+/** Lever un soldat : la prime vient du trésor de la maison, qui le solde ensuite chaque lundi. */
+export function raiseSoldier(state: GameState, npcId: string): ActionResult {
+  const g0 = guard(state); if (g0) return g0;
+  const p = state.characters[state.playerId];
+  const house = houseOfPlayer(state);
+  if (!house) return no('Il faut être à la tête d’une maison pour lever des soldats.');
+  const c = state.characters[npcId];
+  if (!c || !soldierRecruits(state).some(x => x.id === npcId)) return no('Cette personne ne peut pas s’engager dans ta garnison.');
+  const n = garrison(state, house).length;
+  if (n >= garrisonCap(state, house)) return no(`Ta garnison est au complet (${n}/${garrisonCap(state, house)}) : chaque terre tenue permet deux soldats de plus.`);
+  if (house.treasury < RETINUE_BOUNTY + SOLDIER_PAY) return no(`Le trésor de ${house.name} n’a que ${house.treasury} d : il faut ${RETINUE_BOUNTY} d de prime et de quoi payer la première solde (${SOLDIER_PAY} d). Verse de l’argent au trésor.`);
+  // il quitte sa place pour la garnison
+  const job = c.employerId ? state.businesses[c.employerId] : undefined;
+  if (job) fireEmployee(state, job, c, `s'engage dans la garnison de ${house.name}`, true);
+  transferMoney(state, P.o(house.id), P.c(c.id), RETINUE_BOUNTY);
+  joinOrg(state, house, c, 'soldat');
+  c.profession = 'soldat';
+  c.goal = { kind: 'servir' };
+  modifyRelation(state, c.id, p.id, 8, 8);
+  logEvent(state, { type: 'title', actorId: c.id, targetId: p.id, importance: 2, locationId: p.locationId,
+    text: `${fullName(c)} s'engage comme soldat de ${house.name} (${RETINUE_BOUNTY} d de prime, ${SOLDIER_PAY} d la semaine).`, witnesses: [c.id] });
+  finish(state, p, 20);
+  return ok(`${c.firstName} entre dans ta garnison : ${RETINUE_BOUNTY} d de prime payés par le trésor, puis ${SOLDIER_PAY} d chaque lundi. Les soldats gardent tes terres, patrouillent les routes et combattent dans tes guerres.`, 20);
+}
+
+/** Renvoyer un soldat de sa maison. */
+export function dismissSoldier(state: GameState, npcId: string): ActionResult {
+  const house = houseOfPlayer(state);
+  const c = state.characters[npcId];
+  if (!house || !c || house.roles[npcId] !== 'soldat') return no('Ce soldat ne sert pas ta maison.');
+  leaveOrg(state, house, c);
+  if (c.profession === 'soldat') c.profession = 'sans_emploi';
+  c.goal = { kind: 'trouver_emploi' };
+  logEvent(state, { type: 'quit', actorId: c.id, targetId: state.playerId, importance: 1, text: `${fullName(c)} quitte la garnison de ${house.name}.`, witnesses: [c.id] });
+  return ok(`Tu renvoies ${c.firstName} de ta garnison.`, 0);
 }

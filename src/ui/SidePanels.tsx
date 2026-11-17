@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   WORKS, WORK_IDS, TAX_MIN, TAX_MAX, setFiefTax, buildWork, holdAudience, computeUnrest, upcomingTourney, tourneyOpen, enterTourney, tourneyName, TOURNEY_FEE,
+  garrison, garrisonCap, soldierRecruits, raiseSoldier, dismissSoldier, SOLDIER_PAY,
   houseOfPlayer, HOUSE_FOUNDING, foundHouse, houseTreasury, warTargets, declareWar, challengeGangLeader, activeWar,
   gangOf, retinue, retinueCap, recruitsHere, hireManAtArms, dismissManAtArms, gangRaid, leaveGang, RETINUE_BOUNTY, RETINUE_PAY,
   designateHeir, heirOptions, tryForChild, PERKS, fighterOf, GEAR, LIFESTYLES, lifestyleOf, setLifestyle, type Lifestyle,
@@ -338,6 +339,44 @@ function Monde({ state }: { state: GameState }) {
   );
 }
 
+/** Garnison de la maison du joueur : lever et renvoyer des soldats. */
+function Garrison({ state, game }: { state: GameState; game: Game }) {
+  const { act } = game;
+  const house = houseOfPlayer(state)!;
+  const p = state.characters[state.playerId];
+  const over = !!state.gameOver;
+  const soldiers = garrison(state, house);
+  const guards = soldiersOf(state, house).filter(c => !c.isPlayer && c.profession !== 'soldat');
+  const cap = garrisonCap(state, house);
+  const cands = soldierRecruits(state).sort((a, b) => b.skills.combat - a.skills.combat);
+  const here = state.settlements[settlementIdOf(state, p.locationId)];
+  const affordable = house.treasury >= RETINUE_BOUNTY + SOLDIER_PAY;
+  return (
+    <div className="house">
+      <div className="rel-row-head"><b>Garnison ({soldiers.length}/{cap})</b><span className="muted small">solde : {soldiers.length * SOLDIER_PAY} d chaque lundi, sur le trésor</span></div>
+      <p className="muted small">Lève tes soldats parmi les adultes valides de la localité où tu te trouves (sans emploi, ou prêts à quitter leur place) : {RETINUE_BOUNTY} d de prime, puis {SOLDIER_PAY} d par semaine, payés par le trésor de la maison. Ils gardent tes terres, patrouillent contre les brigands et combattent dans tes guerres. Chaque terre tenue permet deux soldats de plus (12 au plus). Sans solde, ils désertent. Un travailleur qui ne t’est pas hostile peut quitter sa place pour te servir.</p>
+      {guards.length > 0 && <p className="muted small">Gardes de l’intendance à ton service (payés par l’intendance) : {guards.map(c => fullName(c)).join(', ')}.</p>}
+      <ul className="rel-list">
+        {soldiers.map(c => (
+          <li key={c.id}><div className="rel-row-head"><b>{fullName(c)}</b><span className="muted small">santé {Math.round(c.health)} · combat {c.skills.combat}{c.gear?.weapon ? ` · ${GEAR[c.gear.weapon.id].name}` : ''}{c.gear?.armor ? ` · ${GEAR[c.gear.armor.id].name}` : ''}</span>
+            <button className="btn sm ghost" disabled={over} onClick={() => act(s => dismissSoldier(s, c.id))}>Renvoyer</button></div></li>
+        ))}
+      </ul>
+      {soldiers.length < cap && (cands.length === 0
+        ? <p className="small">Personne n’est disponible à {here.name} : les adultes valides y servent déjà, sont trop jeunes, malades, ou te sont hostiles. Essaie une autre localité, gagne l’estime des gens (audience, conversations, cadeaux), ou reviens après un lundi.</p>
+        : <>
+          <p className="small">Disponibles à {here.name}{affordable ? '' : ` — le trésor (${house.treasury} d) ne suffit pas : verse-lui de l’argent`} :</p>
+          <ul className="rel-list">
+            {cands.slice(0, 6).map(c => (
+              <li key={c.id}><div className="rel-row-head"><b>{fullName(c)}</b><span className="muted small">{c.age} ans · combat {c.skills.combat} · force {c.attributes.force}{c.employerId ? ` · quittera ${state.businesses[c.employerId]?.name}` : ''}</span>
+                <button className="btn sm" disabled={over || !affordable} onClick={() => act(s => raiseSoldier(s, c.id))}>Lever ({RETINUE_BOUNTY} d)</button></div></li>
+            ))}
+          </ul>
+        </>)}
+    </div>
+  );
+}
+
 /** Gouverner une terre de sa maison (phase 12). */
 function Fief({ state, game, sid }: { state: GameState; game: Game; sid: string }) {
   const { act } = game;
@@ -414,8 +453,8 @@ function Pouvoir({ state, game }: { state: GameState; game: Game }) {
   return (
     <div className="pouvoir">
       {myOrgs.length > 0 && <p className="goal">Ton rang : {myOrgs.map(o => `${({ seigneur: 'seigneur', heritier: 'héritier', soldat: 'soldat', vassal: 'vassal', conseiller: 'conseiller', chef: 'chef', membre: 'membre' } as Record<string, string>)[o.roles[p.id]]} de ${o.name}`).join(', ')}</p>}
-      <h4>Tes hommes d’armes ({men.length}/{retinueCap(p)})</h4>
-      {men.length === 0 && <p className="muted small">Aucun. Engage un adulte sans emploi présent au même endroit que toi : {RETINUE_BOUNTY} d de prime, puis {RETINUE_PAY} d par jour. Tes hommes te suivent, se battent à tes côtés et dissuadent les brigands. Un écuyer en mène quatre, un conseiller six.</p>}
+      <h4>Tes hommes d’armes ({men.length}/{retinueCap(p, state)})</h4>
+      {men.length === 0 && <p className="muted small">{houseOfPlayer(state) ? 'Ton escorte personnelle, payée de ta bourse (les soldats de ta maison se lèvent plus bas, dans « Garnison »). ' : ''}Aucun. Engage un adulte sans emploi présent au même endroit que toi : {RETINUE_BOUNTY} d de prime, puis {RETINUE_PAY} d par jour. Tes hommes te suivent, se battent à tes côtés et dissuadent les brigands. Un écuyer en mène quatre, un conseiller six.</p>}
       {men.length > 0 && <p className="muted small">Solde : {men.length * RETINUE_PAY} d par jour. Sans solde, ils s’en vont. En embuscade, ceux qui sont près de toi combattent avec toi.</p>}
       <ul className="rel-list">
         {men.map(c => (
@@ -423,7 +462,7 @@ function Pouvoir({ state, game }: { state: GameState; game: Game }) {
             <button className="btn sm ghost" disabled={over} onClick={() => act(s => dismissManAtArms(s, c.id))}>Congédier</button></div></li>
         ))}
       </ul>
-      {recruits.length > 0 && men.length < retinueCap(p) && (<>
+      {recruits.length > 0 && men.length < retinueCap(p, state) && (<>
         <p className="small">Prêts à s’engager, ici :</p>
         <ul className="rel-list">
           {recruits.slice(0, 5).map(c => (
@@ -449,6 +488,7 @@ function Pouvoir({ state, game }: { state: GameState; game: Game }) {
             <button className="btn sm ghost" disabled={over || p.money < 1} onClick={() => act(s => houseTreasury(s, 50))}>Verser 50 d</button>
             <button className="btn sm ghost" disabled={over || mine.treasury < 1} onClick={() => act(s => houseTreasury(s, -50))}>Prendre 50 d</button>
           </div>
+          <Garrison state={state} game={game} />
           {lands.map(st => <Fief key={st.id} state={state} game={game} sid={st.id} />)}
           {!war && targets.length > 0 && <div className="save-row">{targets.map(id => (
             <button key={id} className="btn sm danger" disabled={over || !!activeWar(state)} title={`Contre ${state.orgs[state.settlements[id].lordHouseId]?.name}`} onClick={() => act(s => declareWar(s, id))}>Revendiquer {state.settlements[id].name}</button>

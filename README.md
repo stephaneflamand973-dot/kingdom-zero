@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 176 tests automatisés (scénarios A–G, phases 2 à 12, invariants, fuzz) |
+| `npm test` | 177 tests automatisés (scénarios A–G, phases 2 à 12, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -614,6 +614,14 @@ Onglet **Pouvoir** : vos hommes d'armes, les habitants prêts à s'engager ici, 
   - **tenir audience** (2 h, à l'intendance, une fois par semaine) : tu arbitres la pire querelle du lieu (la
     diplomatie et le charisme décident si tu réconcilies ou si tu tranches), tu fais l'aumône aux plus pauvres
     sur le trésor, et la grogne s'apaise pendant deux semaines.
+- **Lever sa garnison.** Le seigneur d'une maison voit, dans l'onglet Pouvoir, la section « Garnison » :
+  - il lève ses soldats parmi les adultes valides de la localité où il se trouve. Ce sont les sans-emploi, ou des
+    travailleurs qui ne lui sont pas hostiles et qui quittent alors leur place ;
+  - la prime de 15 d et la solde de 40 d par semaine sont payées par le trésor de la maison ;
+  - l'effectif est de 4 soldats, plus 2 par terre tenue, 12 au plus. Les gardes de l'intendance restent payés par
+    l'intendance ;
+  - on peut aussi lever un soldat depuis le dialogue avec un habitant ;
+  - un seigneur mène en outre jusqu'à 8 hommes d'armes personnels, payés de sa bourse, titre ou non.
 - **Les seigneurs PNJ bâtissent aussi** quand leur trésor déborde : une chapelle contre la grogne, une palissade
   sur une terre revendiquée, des pavés quand les chemins se dégradent, un moulin sinon. Un seul chantier à la
   fois dans la région, et jamais par un seigneur avare.

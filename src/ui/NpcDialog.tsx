@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  gangContact, joinGang, recruitsHere, hireManAtArms, dismissManAtArms, retinue, retinueCap, RETINUE_BOUNTY, RETINUE_PAY, muster, activeWar,
+  gangContact, joinGang, soldierRecruits, raiseSoldier, houseOfPlayer, recruitsHere, hireManAtArms, dismissManAtArms, retinue, retinueCap, RETINUE_BOUNTY, RETINUE_PAY, muster, activeWar,
   acceptQuest, completeQuest, declineQuest, offerFrom, questActionsWith,
   court, kin, proposeMarriage, houseLedBy, petition, orgsOf, wantedFor, type PetitionKind,
   activeLoans, ambitionLabel, askLoan, businessInTrouble, canTalk, employerOf, fullName, getRelation, greeting, lendMoney, loanTerms,
@@ -80,11 +80,12 @@ export function NpcDialog({ game, npcId, onClose }: { game: Game; npcId: string;
               })}
             </div>
             <QuestBox game={game} npcId={npcId} run={run} />
-            {(gangContact(state, npcId) || recruitsHere(state).some(c => c.id === npcId) || n.captainId === p.id) && (<>
+            {(gangContact(state, npcId) || recruitsHere(state).some(c => c.id === npcId) || n.captainId === p.id || soldierRecruits(state).some(c => c.id === npcId)) && (<>
               <h3 className="dialog-sub">Entre nous</h3>
               <div className="talk-grid">
                 {gangContact(state, npcId) && <button className="btn danger" disabled={!!state.gameOver} onClick={() => run(s => joinGang(s, npcId))}>Demander à rejoindre {gangContact(state, npcId)!.name}<small>{n.firstName} te fait confiance · vie de hors-la-loi</small></button>}
-                {recruitsHere(state).some(c => c.id === npcId) && <button className="btn ghost" disabled={!!state.gameOver || retinue(state).length >= retinueCap(p)} onClick={() => run(s => hireManAtArms(s, npcId))}>Engager comme homme d’armes<small>{RETINUE_BOUNTY} d de prime, {RETINUE_PAY} d par jour</small></button>}
+                {soldierRecruits(state).some(c => c.id === npcId) && <button className="btn" disabled={!!state.gameOver} onClick={() => run(s => raiseSoldier(s, npcId))}>Lever comme soldat de {houseOfPlayer(state)!.name}<small>{RETINUE_BOUNTY} d de prime et 40 d par semaine, sur le trésor</small></button>}
+                {recruitsHere(state).some(c => c.id === npcId) && <button className="btn ghost" disabled={!!state.gameOver || retinue(state).length >= retinueCap(p, state)} onClick={() => run(s => hireManAtArms(s, npcId))}>Engager comme homme d’armes<small>{RETINUE_BOUNTY} d de prime, {RETINUE_PAY} d par jour</small></button>}
                 {n.captainId === p.id && <button className="btn ghost" onClick={() => run(s => dismissManAtArms(s, npcId))}>Congédier<small>il retourne à la vie civile</small></button>}
               </div>
             </>)}

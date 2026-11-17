@@ -214,3 +214,33 @@ describe('Sauvegarde', () => {
     expect(moneyBalance(m0, back.state!)).toBe(0);
   });
 });
+
+describe('Garnison du seigneur', () => {
+  it('le seigneur lève des soldats parmi les sans-emploi de la localité, sur le trésor de sa maison', async () => {
+    const { garrisonCap, soldierRecruits, raiseSoldier, dismissSoldier, retinueCap, soldiersOf } = await import('../src/engine');
+    const { s, p, h, st } = lordOfValcendre(1250);
+    p.locationId = st.squareId;
+    expect(retinueCap(p, s)).toBe(8); // un seigneur mène une escorte de huit
+    // des candidats, où qu'ils soient dans la localité
+    for (const c of Object.values(s.characters).filter(c => !c.isPlayer && c.alive && c.age >= 18 && c.age < 50).slice(0, 3)) {
+      const b = c.employerId ? s.businesses[c.employerId] : undefined;
+      if (b) { b.employees = b.employees.filter(x => x !== c.id); c.employerId = undefined; }
+      c.health = 100; c.sick = 0; c.homeId = st.squareId;
+    }
+    const cands = soldierRecruits(s);
+    expect(cands.length).toBeGreaterThan(0);
+    const c = cands[0];
+    const m0 = totalMoney(s), t0 = h.treasury;
+    const r = raiseSoldier(s, c.id);
+    expect(r.ok).toBe(true);
+    expect(h.roles[c.id]).toBe('soldat');
+    expect(c.profession).toBe('soldat');
+    expect(h.treasury).toBe(t0 - 15);
+    expect(totalMoney(s)).toBe(m0);
+    expect(soldiersOf(s, h).some(x => x.id === c.id)).toBe(true);
+    expect(garrisonCap(s, h)).toBe(6); // 4 + 2 pour Valcendre
+    expect(dismissSoldier(s, c.id).ok).toBe(true);
+    expect(h.roles[c.id]).toBeUndefined();
+    expect(checkIntegrity(s)).toEqual([]);
+  });
+});
