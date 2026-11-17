@@ -137,7 +137,14 @@ export interface Recipe {
   usesTools: boolean;
 }
 
+/** Livre de comptes d'une affaire du joueur, sur une semaine (phase 13). */
+export interface Books { sales: number; purchases: number; wages: number; taxes: number; ownerIn: number; ownerOut: number; other: number; start: number; day: number }
+
 export interface Business {
+  /** Prélèvement hebdomadaire du propriétaire joueur, versé chaque lundi si la caisse le permet (phase 13). */
+  ownerDraw?: number;
+  /** Comptes de la semaine en cours et des quatre précédentes (affaires du joueur). */
+  books?: { cur: Books; past: Books[] };
   id: string;
   name: string;
   kind: BusinessKind;

@@ -14,7 +14,7 @@ import { festivalAt, festivalTonight, serveFestivalAle } from './society';
 import { rollTravelAmbush } from './playerPower';
 import { carryCapacity, weightOf } from './trade';
 import { buyProperty, deposit, hasAccess, leaveProperty, propertiesAt, rentProperty, withdraw } from './property';
-import { buyBusinessAsPlayer, foundAsPlayer, manage, type OwnerOrder } from './enterprise';
+import { buyBusinessAsPlayer, foundAsPlayer, manage, sellBusinessAsPlayer, type OwnerOrder } from './enterprise';
 import { WEIGHT } from './data';
 import { eat as eatFood } from './npc';
 import { chance, rand, randInt } from './rng';
@@ -554,6 +554,7 @@ export const store = (state: GameState, id: string, item: ItemId, n: number) => 
 export const takeOut = (state: GameState, id: string, item: ItemId, n: number) => timed(state, () => withdraw(state, id, item, n));
 export const purchaseBusiness = (state: GameState, id: string) => timed(state, () => buyBusinessAsPlayer(state, id));
 export const ownerOrder = (state: GameState, id: string, order: OwnerOrder) => timed(state, () => manage(state, id, order));
+export const sellOwnBusiness = (state: GameState, id: string) => timed(state, () => sellBusinessAsPlayer(state, id));
 export const found = (state: GameState, kind: BusinessKind, capital: number) => timed(state, () => foundAsPlayer(state, kind, capital));
 
 // ── Crime ───────────────────────────────────────────────────

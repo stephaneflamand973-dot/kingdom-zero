@@ -33,6 +33,7 @@ import { birthdays, dailyFamily, dailyServants, feedChildren, settleEstate, succ
 import { npcBorrowing, ownedBusinesses, processLoans } from './finance';
 import { merchantFulfils, postOrder, processOrders, weeklyContractReview } from './contracts';
 import { announceTourneys, hourlyTourneys } from './tourney';
+import { weeklyBooks } from './enterprise';
 import { festivalTonight, initialAmbition, jobHopping, processAmbitions, startFestivals, trySlander } from './society';
 import { ITEM_IDS } from './data';
 
@@ -319,6 +320,7 @@ export function dayTick(state: GameState): void {
 
   // Hebdomadaire (chaque lundi) : impôts, salaires, migrations
   if (d.weekday === 0 && d.day > 0) {
+    weeklyBooks(state); // comptes et prélèvement des affaires du joueur (phase 13)
     const inRevolt = (sid: string) => (state.settlements[sid].revoltUntilDay ?? -1) >= d.day;
     for (const b of allBusinesses(state)) {
       if (b.kind === 'manor') continue;

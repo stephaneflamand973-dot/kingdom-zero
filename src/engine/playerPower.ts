@@ -19,10 +19,13 @@ import { kin, PREGNANCY_DAYS, wed } from './family';
 import { MIN_PER_DAY, formatDuration } from './time';
 import type { ActionResult, Character, GameState, Organization } from './types';
 import { activeContract, jobOffer, signContract } from './contracts';
+import { ownedBusinesses } from './finance';
+import { SOLDIER_PAY } from './nobility';
+import { ownerFlow, reserveFor } from './economy';
 import { businessesIn, charactersAt, clamp, fullName, hereSettlement, player, qty, roadPath, settlementIdOf } from './util';
 import { toDate } from './time';
 import { wearGear } from './gear';
-import { alliesAtHand, escortFactor } from './warband';
+import { alliesAtHand, escortFactor, garrison } from './warband';
 
 const ok = (message: string, minutes: number): ActionResult => ({ ok: true, message, minutes });
 const no = (message: string): ActionResult => ({ ok: false, message, minutes: 0 });
@@ -504,31 +507,100 @@ export function autoDayLabour(state: GameState, p: Character, hours: number): bo
   return r.ok;
 }
 
-/** Vivre au jour le jour : l'IA conduit le joueur ; s'interrompt en cas de rencontre, de mort ou de fin. */
+/** Le joueur a-t-il mieux à faire que chercher une place ? (seigneur, soldat d'une maison, propriétaire) */
+export function hasVocation(state: GameState, p: Character): boolean {
+  if (orgList(state, 'house').some(h => h.leaderId === p.id)) return true;
+  if (orgsOf(state, p.id, 'house').some(h => h.roles[p.id] === 'soldat')) return true;
+  return ownedBusinesses(state, p).length > 0;
+}
+
+/**
+ * Intendance du pilote automatique, chaque matin : vivre de ses affaires quand la bourse est vide,
+ * et garder au trésor de sa maison de quoi solder la garnison quatre semaines.
+ * Renvoie le récit de ce qui a été fait.
+ */
+export function autoSteward(state: GameState, p: Character): string[] {
+  const done: string[] = [];
+  if (!p.alive || state.locations[p.locationId]?.kind === 'road') return done;
+  // 1. subsistance : on prélève sur la caisse de ses affaires, sans entamer leur réserve
+  if (p.money < 40) {
+    for (const b of ownedBusinesses(state, p).sort((x, y) => y.treasury - x.treasury || (x.id < y.id ? -1 : 1))) {
+      const n = Math.min(80 - p.money, b.treasury - reserveFor(b));
+      if (n > 0 && transferMoney(state, P.b(b.id), P.c(p.id), n)) { ownerFlow(state, b, n, true); done.push(`${n} d prélevés sur ${b.name} pour vivre`); }
+      if (p.money >= 40) break;
+    }
+  }
+  // 2. la maison : de quoi solder la garnison un mois
+  const h = orgList(state, 'house').find(o => o.leaderId === p.id);
+  if (h) {
+    const need = garrison(state, h).length * SOLDIER_PAY * 4 + 50;
+    const give = Math.min(p.money - 100, need - h.treasury);
+    if (give > 0 && transferMoney(state, P.c(p.id), P.o(h.id), give)) done.push(`${give} d versés au trésor de ${h.name} pour la solde`);
+  }
+  return done;
+}
+
+interface Snapshot { money: number; health: number; biz: Record<string, number>; house?: { id: string; treasury: number; soldiers: number }; job?: string }
+function snapshot(state: GameState, p: Character): Snapshot {
+  const h = orgList(state, 'house').find(o => o.leaderId === p.id);
+  const k = activeContract(state, p.id);
+  return {
+    money: p.money, health: Math.round(p.health),
+    biz: Object.fromEntries(ownedBusinesses(state, p).map(b => [b.id, b.treasury])),
+    house: h ? { id: h.id, treasury: h.treasury, soldiers: garrison(state, h).length } : undefined,
+    job: k ? `${GRADE_LABEL[k.grade ?? 'compagnon']} à ${state.businesses[k.businessId].name}` : undefined,
+  };
+}
+const GRADE_LABEL: Record<string, string> = { apprenti: 'apprenti', compagnon: 'compagnon', maitre: 'maître', contremaitre: 'contremaître' };
+
+/**
+ * Vivre au jour le jour : l'IA conduit le joueur comme un habitant (manger, dormir, travailler, patrouiller),
+ * et son intendant veille à ses affaires et à sa maison. S'interrompt en cas de rencontre, de mort ou de fin.
+ */
 export function liveDays(state: GameState, days: number): ActionResult {
   const g = guard(state); if (g) return g;
   const p = player(state);
-  const money0 = p.money, t0 = state.time, seq0 = state.eventSeq;
+  const before = snapshot(state, p);
+  const t0 = state.time, seq0 = state.eventSeq;
+  const stewardship: string[] = [];
+  let hoursWorked = 0;
   state.autopilotUntil = state.time + days * MIN_PER_DAY;
   const end = state.autopilotUntil;
+  stewardship.push(...autoSteward(state, p));
   while (state.time < end) {
-    // phase 6 : sans place, le pilote automatique se présente chaque matin là où l'on embauche,
-    // et sinon fait une journée chez le patron qui le connaît le mieux (c'est ainsi qu'on gagne sa confiance)
     const hour = toDate(state.time).hour;
-    if (hour === 7 && !p.employerId && p.alive && !state.encounter && p.needs.energy > 30 && p.needs.hunger < 70 && !autoFindWork(state, p)) {
+    if (hour === 7 && p.alive && !state.encounter) stewardship.push(...autoSteward(state, p));
+    // phase 6 : sans place, le pilote automatique se présente chaque matin là où l'on embauche,
+    // et sinon fait une journée chez le patron qui le connaît le mieux (c'est ainsi qu'on gagne sa confiance).
+    // Phase 13 : un seigneur, un soldat ou un propriétaire ne court pas les embauches.
+    if (hour === 7 && !p.employerId && p.alive && !state.encounter && p.needs.energy > 30 && p.needs.hunger < 70 && !hasVocation(state, p) && !autoFindWork(state, p)) {
       if (autoDayLabour(state, p, Math.min(8, Math.floor((end - state.time) / 60)))) {
         if (state.encounter || state.gameOver || state.pendingSuccession) break;
         continue;
       }
     }
     advanceTime(state, Math.min(60, end - state.time));
+    if (p.activity.kind === 'work') hoursWorked += 1;
     if (state.encounter || state.gameOver || state.pendingSuccession) break;
   }
   state.autopilotUntil = undefined;
   const elapsed = state.time - t0;
+  const after = snapshot(state, p);
+  const lines: string[] = [`Bourse ${before.money} → ${after.money} d.`];
+  if (hoursWorked) lines.push(`${hoursWorked} h de travail${after.job ? ` (${after.job})` : ''}.`);
+  else if (after.job && after.job !== before.job) lines.push(`Nouvelle place : ${after.job}.`);
+  for (const [id, t] of Object.entries(after.biz)) {
+    const b = state.businesses[id];
+    lines.push(`${b.name} : caisse ${before.biz[id] ?? 0} → ${t} d, ${b.employees.length} ouvrier${b.employees.length > 1 ? 's' : ''}.`);
+  }
+  if (after.house) lines.push(`${state.orgs[after.house.id].name} : trésor ${before.house?.treasury ?? 0} → ${after.house.treasury} d, ${after.house.soldiers} soldat${after.house.soldiers > 1 ? 's' : ''}.`);
+  if (stewardship.length) {
+    lines.push(`Ton intendant : ${stewardship.slice(-3).join(' ; ')}${stewardship.length > 3 ? ` (et ${stewardship.length - 3} autre${stewardship.length > 4 ? 's' : ''} fois)` : ''}.`);
+  }
+  if (after.health < before.health - 10) lines.push(`Santé ${before.health} → ${after.health}.`);
   const mine = state.events.filter(e => Number(e.id.slice(1)) > seq0 && e.importance >= 2 && (e.actorId === p.id || e.targetId === p.id || p.knownEvents.includes(e.id)));
   const why = state.encounter ? ' Un imprévu interrompt le cours des jours.' : state.pendingSuccession ? ' La mort t’a surpris.' : '';
-  return ok(`${formatDuration(elapsed)} passent au fil des jours. Bourse : ${money0} → ${p.money} d.${mine.length ? ` Faits marquants : ${mine.slice(-4).map(e => e.text).join(' ')}` : ''}${why}`, elapsed);
+  return ok(`${formatDuration(elapsed)} passent au fil des jours. ${lines.join(' ')}${mine.length ? ` Faits marquants : ${mine.slice(-3).map(e => e.text).join(' ')}` : ''}${why}`, elapsed);
 }
 
 // ── Phase 9 : enfants et testament ──────────────────────────

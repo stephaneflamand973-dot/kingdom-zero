@@ -32,6 +32,7 @@ export function jobOffer(state: GameState, b: Business, p: Character): Offer {
   const wage = contractWage(state, b, p);
   const no = (reason: string): Offer => ({ ok: false, reason, wage, hours: CONTRACT_HOURS });
   if (activeContract(state, p.id)) return no('Tu as déjà une place. Démissionne d’abord.');
+  if (b.ownerId === p.id) return no('C’est ton affaire : tu y travailles quand tu veux, sans contrat ni gages.');
   if (b.kind === 'market') return no('Le marchand ne prend pas de commis.');
   const stewardId = state.settlements[settlementIdOf(state, b.locationId)].stewardId;
   const owner = b.ownerId ? state.characters[b.ownerId] : stewardId ? state.characters[stewardId] : undefined;
@@ -168,6 +169,7 @@ export function acceptOrder(state: GameState, orderId: string): ActionResult {
   const p = player(state);
   const o = state.orders.find(x => x.id === orderId);
   if (!o || o.status !== 'open') return { ok: false, message: 'Cette commande n’est plus disponible.', minutes: 0 };
+  if (state.businesses[o.businessId]?.ownerId === p.id) return { ok: false, message: 'C’est la commande de ta propre affaire : vends-lui directement tes marchandises, ou dépose de l’argent pour qu’elle en achète.', minutes: 0 };
   if (state.locations[p.locationId].kind !== 'square' || settlementIdOf(state, p.locationId) !== settlementIdOf(state, state.businesses[o.businessId].locationId)) {
     return { ok: false, message: 'Le tableau des commandes se consulte sur la place de la localité concernée.', minutes: 0 };
   }
@@ -195,7 +197,7 @@ export function deliverOrder(state: GameState, orderId: string): ActionResult {
   o.delivered += n;
   let note = `${cash} d reçus`;
   const owner = b.ownerId ? state.characters[b.ownerId] : undefined;
-  if (cash < due && owner) {
+  if (cash < due && owner && owner.id !== p.id) {
     // Le propriétaire signe une reconnaissance de dette au joueur, sans intérêt
     const rest = due - cash;
     const fromPurse = Math.min(owner.money, rest);

@@ -1,4 +1,5 @@
 // Sauvegarde versionnée avec contrôle d'intégrité.
+import { cleanSelfDealings } from './finance';
 import { checkIntegrity } from './invariants';
 import type { Festival, GameState } from './types';
 import { addPower, addRegion, SAVE_VERSION, valcendreSettlement } from './world';
@@ -95,6 +96,7 @@ export function deserialize(text: string): { state?: GameState; error?: string; 
   // depuis : on la répare plutôt que de la refuser.
   let repaired: string[] = [];
   if (checkIntegrity(state).length) repaired = repairState(state);
+  repaired.push(...cleanSelfDealings(state)); // affaires conclues avec soi-même (phase 13)
   const errors = checkIntegrity(state);
   if (errors.length) return { error: `Sauvegarde incohérente : ${errors.slice(0, 3).join(' ; ')}` };
   return { state, savedAt: file.savedAt, repaired };

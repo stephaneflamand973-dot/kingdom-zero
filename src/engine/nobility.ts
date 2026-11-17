@@ -108,7 +108,7 @@ export function weeklyGovernance(state: GameState): void {
     const wanted = 2 + Math.min(4, threat);
     const affordable = Math.floor(house.treasury / (SOLDIER_PAY * 6));
     const soldiers = house.members.filter(id => house.roles[id] === 'soldat' && state.characters[id]?.alive).length;
-    if (soldiers < Math.min(wanted, affordable)) {
+    if (soldiers < Math.min(wanted, affordable) && !lord.isPlayer) { // le joueur lève lui-même sa garnison (phase 12 bis)
       // une maison dépossédée lève ses fidèles sur la terre qu'elle revendique (phase 11)
       const pool = house.claimId && state.settlements[house.claimId] && !lands.some(l => l.id === house.claimId) ? [...lands, state.settlements[house.claimId]] : lands;
       const recruit = pool.flatMap(st => residents(state, st.id))

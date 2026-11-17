@@ -2,13 +2,13 @@
 // Entreprises (phase 3) : rachat et gestion par le joueur, fondation de nouveaux établissements.
 // ─────────────────────────────────────────────────────────────
 import { PROFESSION_BY_BUSINESS, RECIPES, WORK_SKILL } from './data';
-import { askPrice, outputCap, P, reserveFor, transferMoney } from './economy';
+import { askPrice, emptyBooks, outputCap, ownerFlow, P, reserveFor, transferMoney } from './economy';
 import { logEvent } from './events';
 import { businessValue, transferBusiness } from './finance';
 import { getRelation } from './social';
 import { businessesForSale } from './society';
 import { toDate } from './time';
-import type { ActionResult, Business, BusinessKind, Character, GameState, ItemId } from './types';
+import type { ActionResult, Books, Business, BusinessKind, Character, GameState, ItemId } from './types';
 import { aliveCharacters, businessesIn, fullName, hasTrait, locationsIn, newId, player, qty, settlementIdOf } from './util';
 import { ITEMS } from './data';
 
@@ -58,7 +58,8 @@ export function buyBusinessAsPlayer(state: GameState, businessId: string): Actio
 
 export type OwnerOrder =
   | { kind: 'withdraw'; amount: number } | { kind: 'deposit'; amount: number }
-  | { kind: 'wage'; delta: number } | { kind: 'workers'; delta: number } | { kind: 'target'; item: ItemId; factor: number };
+  | { kind: 'wage'; delta: number } | { kind: 'workers'; delta: number } | { kind: 'target'; item: ItemId; factor: number }
+  | { kind: 'draw'; delta: number };
 
 export function maxWorkersFor(kind: BusinessKind): number {
   return kind === 'farm' || kind === 'mine' ? 5 : kind === 'market' ? 0 : 3;
@@ -74,6 +75,7 @@ export function manage(state: GameState, businessId: string, order: OwnerOrder):
       const n = Math.min(order.amount, b.treasury);
       if (n <= 0) return no('La caisse est vide.');
       transferMoney(state, P.b(b.id), P.c(p.id), n);
+      ownerFlow(state, b, n, true);
       return { ok: true, message: `Tu retires ${n} d de la caisse de ${b.name}.`, minutes: 5 };
     }
     case 'deposit': {
@@ -81,6 +83,7 @@ export function manage(state: GameState, businessId: string, order: OwnerOrder):
       const n = Math.min(order.amount, p.money);
       if (n <= 0) return no('Tu n’as rien à déposer.');
       transferMoney(state, P.c(p.id), P.b(b.id), n);
+      ownerFlow(state, b, n, false);
       return { ok: true, message: `Tu déposes ${n} d dans la caisse de ${b.name}.`, minutes: 5 };
     }
     case 'wage': {
@@ -95,6 +98,12 @@ export function manage(state: GameState, businessId: string, order: OwnerOrder):
       if (m === b.maxWorkers) return no('Effectif maximal inchangé.');
       b.maxWorkers = m;
       return { ok: true, message: `Effectif maximal de ${b.name} : ${m} ouvrier${m > 1 ? 's' : ''}.`, minutes: 0 };
+    }
+    case 'draw': {
+      const d = Math.max(0, Math.min(300, (b.ownerDraw ?? 0) + order.delta));
+      if (d === (b.ownerDraw ?? 0)) return no('Prélèvement inchangé.');
+      b.ownerDraw = d;
+      return { ok: true, message: d ? `Chaque lundi, ${b.name} te versera ${d} d si sa caisse garde de quoi tourner (${reserveFor(b)} d de réserve). L’argent arrive dans ta bourse où que tu sois.` : `Tu ne prélèves plus rien sur ${b.name} : les bénéfices restent dans la caisse.`, minutes: 0 };
     }
     case 'target': {
       const cur = b.targets[order.item] ?? 0;
@@ -256,4 +265,68 @@ export function businessDiagnosis(_state: GameState, b: Business): Diagnosis {
   if (missing) return { ok: false, text: `Il manque des ${ITEMS[missing].plural} : la production est à l’arrêt.`, advice: b.treasury < 20 ? 'La caisse ne permet plus d’en acheter : dépose de l’argent.' : 'L’affaire en rachètera au prochain matin si un vendeur en a.' };
   if (full) return { ok: true, text: 'Les réserves sont pleines : la production attend les ventes.', advice: 'Si cela dure, baisse le stock visé ou réduis l’effectif.' };
   return { ok: true, text: `L’affaire tourne avec ${b.employees.length} ouvrier${b.employees.length > 1 ? 's' : ''}.` };
+}
+
+// ── Comptes et prélèvement (phase 13) ───────────────────────
+
+/** Résultat d'une semaine : ce que l'affaire a gagné par son activité, hors apports et prélèvements du propriétaire. */
+export function weekResult(k: Books): number { return k.sales + k.other - k.purchases - k.wages - k.taxes; }
+
+/**
+ * Chaque lundi : on clôt la semaine des affaires du joueur, puis on lui verse son prélèvement
+ * si la caisse garde sa réserve de fonctionnement.
+ */
+export function weeklyBooks(state: GameState): void {
+  for (const b of Object.values(state.businesses)) {
+    if (!b.ownerId || b.ownerId !== state.playerId) continue;
+    if (b.books) { b.books.past = [b.books.cur, ...b.books.past].slice(0, 4); }
+    b.books = { cur: emptyBooks(state, b.treasury), past: b.books?.past ?? [] };
+    const p = state.characters[state.playerId];
+    const draw = b.ownerDraw ?? 0;
+    if (!draw || !p?.alive) continue;
+    const n = Math.min(draw, Math.max(0, b.treasury - reserveFor(b)));
+    if (n > 0 && transferMoney(state, P.b(b.id), P.c(p.id), n)) {
+      ownerFlow(state, b, n, true);
+      logEvent(state, { type: 'production', actorId: p.id, businessId: b.id, importance: 1, text: `${b.name} verse ${n} d à ${fullName(p)}${n < draw ? ` (sur ${draw} d prévus : la caisse doit garder sa réserve)` : ''}.`, witnesses: [p.id] });
+    }
+  }
+}
+
+/** À quel prix le joueur peut-il céder son affaire, et à qui ? Un habitant aisé, sinon l'intendance (à perte). */
+export function saleOffer(state: GameState, b: Business): { buyer?: Character; price: number; toManor: boolean } | undefined {
+  const sid = settlementIdOf(state, b.locationId);
+  const value = businessValue(state, b);
+  const price = Math.round(value * 0.9);
+  const buyer = aliveCharacters(state)
+    .filter(c => !c.isPlayer && c.age >= 18 && settlementIdOf(state, c.homeId) === sid && c.money >= price && c.profession !== 'seigneur'
+      && !Object.values(state.businesses).some(x => x.ownerId === c.id))
+    .sort((x, y) => y.money - x.money || (x.id < y.id ? -1 : 1))[0];
+  if (buyer) return { buyer, price, toManor: false };
+  const manor = state.businesses[state.settlements[sid].manorId];
+  const low = Math.round(value * 0.6);
+  if (manor && manor.treasury - 150 >= low) return { price: low, toManor: true };
+  return undefined;
+}
+
+export function sellBusinessAsPlayer(state: GameState, businessId: string): ActionResult {
+  const p = player(state);
+  const b = state.businesses[businessId];
+  if (!b || b.ownerId !== p.id) return no('Cette affaire ne t’appartient pas.');
+  if (p.locationId !== b.locationId) return no('Une vente se conclut sur place.');
+  const o = saleOffer(state, b);
+  if (!o) return no('Personne ici n’a de quoi racheter ton affaire, pas même l’intendance. Reviens plus tard.');
+  if (o.buyer) {
+    transferMoney(state, P.c(o.buyer.id), P.c(p.id), o.price);
+    transferBusiness(state, b, o.buyer, p);
+  } else {
+    transferMoney(state, P.b(state.settlements[settlementIdOf(state, b.locationId)].manorId), P.c(p.id), o.price);
+    b.ownerId = null;
+    if (p.employerId === b.id) p.employerId = undefined;
+  }
+  b.ownerDraw = undefined; b.books = undefined;
+  if (p.employerId === b.id) p.employerId = undefined;
+  logEvent(state, { type: 'sale', actorId: p.id, targetId: o.buyer?.id, businessId: b.id, locationId: b.locationId, importance: 3,
+    text: o.buyer ? `${fullName(p)} vend ${b.name} à ${fullName(o.buyer)} pour ${o.price} d.` : `${fullName(p)} cède ${b.name} à l'intendance pour ${o.price} d.`,
+    witnesses: aliveCharacters(state).filter(c => settlementIdOf(state, c.homeId) === settlementIdOf(state, b.locationId)).map(c => c.id) });
+  return { ok: true, message: o.buyer ? `${o.buyer.firstName} rachète ${b.name} : ${o.price} d dans ta bourse.` : `L’intendance reprend ${b.name} à bas prix : ${o.price} d dans ta bourse.`, minutes: 30 };
 }

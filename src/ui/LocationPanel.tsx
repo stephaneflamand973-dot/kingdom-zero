@@ -3,6 +3,7 @@ import {
   GEAR, GEAR_IDS, gearPrice, buyGear, repairCost, repairGear, retinue,
   GRADE_NAMES, gradeOf, foundingCost, opportunityLabel, businessDiagnosis, moveTo, recommendedCapital,
   activeContract, applyForJob, businessesForSale, deliver, jobOffer, openOrders, quitJob, takeOrder,
+  sellOwnBusiness, saleOffer, weekResult, reserveFor, type Books,
   buyHome, carryCapacity, found, FOUNDABLE, FOUNDING_COST, hasAccess, ITEM_IDS, leaveHome, ownerOrder, propertiesAt, purchaseBusiness,
   purchaseOffer, rentHome, RECIPES, settlementIdOf, store, takeOut, weightOf, WEIGHT, type BusinessKind, type Property,
   askPrice, businessesAt, buy, canWork, charactersAt, fullName, getRelation, isOpen, ITEMS, ITEM_ICON, moodOf,
@@ -248,7 +249,13 @@ export function OwnerPanel({ game, b }: { game: Game; b: Business }) {
             minus={() => act(s => ownerOrder(s, b.id, { kind: 'target', item: it, factor: 0.75 }))}
             plus={() => act(s => ownerOrder(s, b.id, { kind: 'target', item: it, factor: 1.33 }))} disabled={over} />
         ))}
+        <FragmentRow label="Ton prélèvement" value={`${b.ownerDraw ?? 0} d / sem.`}
+          minus={() => act(s => ownerOrder(s, b.id, { kind: 'draw', delta: -10 }))}
+          plus={() => act(s => ownerOrder(s, b.id, { kind: 'draw', delta: 10 }))} disabled={over} />
       </div>
+      <p className="muted small">Le prélèvement t’est versé chaque lundi, où que tu sois, tant que la caisse garde sa réserve de fonctionnement ({reserveFor(b)} d).</p>
+      <BooksView b={b} />
+      <SaleRow game={game} b={b} here={here} />
     </div>
   );
 }
@@ -367,3 +374,40 @@ function Armory({ game, b }: { game: Game; b: Business }) {
 }
 
 export type { GameState };
+
+/** Livre de comptes : la semaine en cours et les précédentes (phase 13). */
+function BooksView({ b }: { b: Business }) {
+  const weeks: { label: string; k: Books }[] = [];
+  if (b.books) { weeks.push({ label: 'Cette semaine', k: b.books.cur }); b.books.past.forEach((k, i) => weeks.push({ label: i === 0 ? 'Semaine dernière' : `Il y a ${i + 1} sem.`, k })); }
+  if (!weeks.length) return <p className="muted small">Livre de comptes : il s’ouvrira au premier denier qui entre ou sort.</p>;
+  const sign = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+  return (
+    <details className="books" open>
+      <summary>Livre de comptes</summary>
+      <table className="small">
+        <thead><tr><th></th>{weeks.slice(0, 3).map(w => <th key={w.label}>{w.label}</th>)}</tr></thead>
+        <tbody>
+          <tr><td>Ventes</td>{weeks.slice(0, 3).map(w => <td key={w.label}>{w.k.sales + w.k.other}</td>)}</tr>
+          <tr><td>Achats</td>{weeks.slice(0, 3).map(w => <td key={w.label}>−{w.k.purchases}</td>)}</tr>
+          <tr><td>Gages</td>{weeks.slice(0, 3).map(w => <td key={w.label}>−{w.k.wages}</td>)}</tr>
+          <tr><td>Impôts</td>{weeks.slice(0, 3).map(w => <td key={w.label}>−{w.k.taxes}</td>)}</tr>
+          <tr><td><b>Résultat</b></td>{weeks.slice(0, 3).map(w => <td key={w.label} className={weekResult(w.k) >= 0 ? 'ok' : 'ko'}><b>{sign(weekResult(w.k))}</b></td>)}</tr>
+          <tr><td>Tes apports / prélèvements</td>{weeks.slice(0, 3).map(w => <td key={w.label}>{sign(w.k.ownerIn)} / −{w.k.ownerOut}</td>)}</tr>
+        </tbody>
+      </table>
+    </details>
+  );
+}
+
+function SaleRow({ game, b, here }: { game: Game; b: Business; here: boolean }) {
+  const { state, act } = game;
+  const [ask, setAsk] = useState(false);
+  const o = saleOffer(state, b);
+  return (
+    <div className="save-row">
+      {!o && <span className="muted small">Personne ici ne peut racheter ton affaire pour l’instant.</span>}
+      {o && !ask && <button className="btn sm ghost" disabled={!!state.gameOver || !here} title={here ? '' : 'La vente se conclut sur place'} onClick={() => setAsk(true)}>Vendre ({o.price} d{o.toManor ? ', à l’intendance' : ` à ${o.buyer!.firstName}`})</button>}
+      {o && ask && <><span className="small">Céder {b.name} pour {o.price} d ?</span><button className="btn sm danger" onClick={() => { setAsk(false); act(s => sellOwnBusiness(s, b.id)); }}>Oui</button><button className="btn sm ghost" onClick={() => setAsk(false)}>Non</button></>}
+    </div>
+  );
+}

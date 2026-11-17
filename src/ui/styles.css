@@ -477,3 +477,10 @@ kbd { font-family: var(--serif); background: var(--wood-3); border: 1px solid va
 .equip-line { display: flex; gap: 14px; flex-wrap: wrap; font-size: .95rem; }
 .lifestyle { display: grid; gap: 6px; }
 .lifestyle select { font: inherit; padding: 6px 8px; background: var(--wood-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+/* Livre de comptes d'une affaire (phase 13) */
+.books { margin: 8px 0; }
+.books summary { cursor: pointer; font-weight: 600; }
+.books table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.books th, .books td { text-align: right; padding: 2px 6px; border-bottom: 1px solid var(--line, rgba(127,127,127,.25)); }
+.books th:first-child, .books td:first-child { text-align: left; }
+.books td.ok { color: var(--ok, #3b7d3b); } .books td.ko { color: var(--ko, #a33); }

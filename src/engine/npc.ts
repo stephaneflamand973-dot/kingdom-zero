@@ -103,7 +103,11 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
       const roads = house.patrolRoads;
       const onRoad = roads.length > 0 && (hour + c.id.length) % 3 === 0;
       const loc = onRoad ? roads[hour % roads.length] : home.squareId;
-      opts.push({ score: 72, run: () => { setActivity(state, c, 'patrol', loc, onRoad ? `Patrouille sur ${state.locations[loc].name}` : `Monte la garde (${state.locations[loc].name})`); c.hoursWorkedToday += 1; } });
+      opts.push({ score: 72, run: () => {
+        setActivity(state, c, 'patrol', loc, onRoad ? `Patrouille sur ${state.locations[loc].name}` : `Monte la garde (${state.locations[loc].name})`);
+        c.hoursWorkedToday += 1;
+        if (c.isPlayer) house.service[c.id] = (house.service[c.id] ?? 0) + 1; // phase 13 : le service du joueur au pilote automatique compte pour sa solde
+      } });
     }
   }
 
@@ -125,7 +129,10 @@ export function npcDecide(state: GameState, c: Character, hour: number, weekday:
   const bread = qty(c.inventory, 'bread') + qty(c.inventory, 'grain');
   if (!night && (bread === 0 && n.hunger > 25 || bread < 2 && n.hunger > 10)) {
     // pain de préférence ; à défaut, du grain pour la bouillie
-    const best = sellersOf(state, 'bread', hour, c)[0] ?? sellersOf(state, 'grain', hour, c)[0];
+    let best: { b: Business; price: number } | undefined = sellersOf(state, 'bread', hour, c)[0] ?? sellersOf(state, 'grain', hour, c)[0];
+    // phase 13 : au pilote automatique, un joueur qui vit simplement n'achète pas son pain au prix de l'auberge
+    // quand il lui en reste ou qu'il n'a pas encore faim : il attend l'ouverture du fournil
+    if (best && c.isPlayer && thrifty(c) && best.b.kind === 'tavern' && (bread > 0 || n.hunger < 55)) best = sellersOf(state, 'bread', hour, c).find(x => x.b.kind !== 'tavern');
     if (best && c.money >= best.price) {
       const s = 28 + n.hunger * 0.6 + (bread === 0 ? 8 : 0);
       opts.push({ score: s, run: () => buyFood(state, c, best.b, best.price, best.b.sells.includes('bread') && qty(best.b.stock, 'bread') > 0 ? 'bread' : 'grain') });
@@ -407,15 +414,16 @@ function socialize(state: GameState, c: Character, tavern: Business, hour: numbe
   }
   // Qui épargne pour s'établir se prive de bière
   const saving = c.ambition.kind === 'ouvrir_commerce' && c.money < (c.ambition.target ?? 0) && c.needs.social > 30;
-  // Les gens aisés dînent à l'auberge plutôt que de manger leur pain
-  if (isOpen(tavern, hour) && c.money > 150 && c.needs.hunger > 25 && qty(tavern.stock, 'bread') > 0) {
+  // Les gens aisés dînent à l'auberge plutôt que de manger leur pain (le joueur, seulement s'il mène grand train)
+  if (isOpen(tavern, hour) && c.money > 150 && !(c.isPlayer && thrifty(c)) && c.needs.hunger > 25 && qty(tavern.stock, 'bread') > 0) {
     const mp = askPrice(state, tavern, 'bread');
     if (trade(state, P.c(c.id), P.b(tavern.id), 'bread', 1, mp)) { eat(state, c); note = `Dîne à ${tavern.name}`; }
   }
   if (isOpen(tavern, hour) && qty(tavern.stock, 'ale') > 0) {
     const price = askPrice(state, tavern, 'ale');
     const foodReserve = askPrice(state, tavern, 'bread') * 2;
-    const thirsty = !saving && (!hasTrait(c, 'avare') || chance(state, 0.3));
+    // un joueur qui vit simplement ne boit que s'il manque de compagnie (phase 13)
+    const thirsty = !saving && (!hasTrait(c, 'avare') || chance(state, 0.3)) && !(c.isPlayer && thrifty(c) && c.needs.social >= 45);
     if (thirsty && c.money >= price + foodReserve && trade(state, P.c(c.id), P.b(tavern.id), 'ale', 1, price)) {
       addItem(c.inventory, 'ale', -1);
       addItem(state.ledger.consumed, 'ale', 1);
@@ -426,3 +434,6 @@ function socialize(state: GameState, c: Character, tavern: Business, hour: numbe
   }
   setActivity(state, c, 'socialize', tavern.locationId, note, tavern.id);
 }
+
+/** Le joueur vit-il simplement (train de vie frugal ou modeste) ? Le pilote automatique ménage alors sa bourse. */
+function thrifty(c: Character): boolean { return (c.lifestyle ?? 'frugal') === 'frugal' || c.lifestyle === 'modeste'; }

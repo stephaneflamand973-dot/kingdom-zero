@@ -94,7 +94,8 @@ export function createLoan(state: GameState, lender: Character, borrower: Charac
 }
 
 /** Reconnaissance de dette sans versement (marchandise livrée non payée), sans intérêt, 2 semaines. */
-export function recordIOU(state: GameState, creditor: Character, debtor: Character, amount: number, purpose: string): Loan {
+export function recordIOU(state: GameState, creditor: Character, debtor: Character, amount: number, purpose: string): Loan | undefined {
+  if (creditor.id === debtor.id) return undefined; // on ne se doit rien à soi-même
   const day = toDate(state.time).day;
   const loan: Loan = {
     id: newId(state, 'l'), lenderId: creditor.id, borrowerId: debtor.id, principal: amount, totalDue: amount, remaining: amount,
@@ -151,9 +152,29 @@ function closeRepaid(state: GameState, loan: Loan): void {
   });
 }
 
+/**
+ * Répare les affaires conclues avec soi-même (anciennes sauvegardes) : reconnaissance de dette
+ * envers soi, contrat de travail dans sa propre affaire, propriétaire inscrit parmi ses ouvriers.
+ */
+export function cleanSelfDealings(state: GameState): string[] {
+  const fixed: string[] = [];
+  for (const l of state.loans) if (l.status === 'active' && l.lenderId === l.borrowerId) { l.status = 'repaid'; l.remaining = 0; fixed.push(`dette envers soi-même annulée (${l.totalDue} d)`); }
+  for (const k of state.contracts ?? []) {
+    const b = state.businesses[k.businessId];
+    if (k.status === 'active' && b?.ownerId === k.workerId) { k.status = 'ended'; k.endReason = 'devient propriétaire'; fixed.push(`contrat avec sa propre affaire (${b.name}) clos`); }
+  }
+  for (const b of allBusinesses(state)) {
+    if (b.ownerId && b.employees.includes(b.ownerId)) { b.employees = b.employees.filter(id => id !== b.ownerId); fixed.push(`${b.name} : le propriétaire n'est plus compté parmi ses ouvriers`); }
+  }
+  const p = state.characters[state.playerId];
+  if (p && p.unpaidWages > 0 && p.employerId && state.businesses[p.employerId]?.ownerId === p.id) { p.unpaidWages = 0; fixed.push('salaires « impayés » envers soi-même effacés'); }
+  return fixed;
+}
+
 /** Échéances du jour : appelé une fois par jour. */
 export function processLoans(state: GameState): void {
   const day = toDate(state.time).day;
+  cleanSelfDealings(state);
   for (const loan of state.loans) {
     if (loan.status !== 'active' || loan.nextDueDay > day) continue;
     const borrower = state.characters[loan.borrowerId], lender = state.characters[loan.lenderId];
@@ -241,7 +262,10 @@ export function transferBusiness(state: GameState, b: Business, newOwner: Charac
     b.employees = b.employees.filter(id => id !== newOwner.id);
     if (newOwner.employerId === b.id) newOwner.employerId = undefined;
   }
+  // un contrat de travail du nouveau propriétaire dans cette affaire prend fin : on ne s'emploie pas soi-même
+  for (const k of state.contracts ?? []) if (k.status === 'active' && k.workerId === newOwner.id && k.businessId === b.id) { k.status = 'ended'; k.endReason = 'devient propriétaire'; }
   b.ownerId = newOwner.id;
+  if (newOwner.isPlayer) b.books = undefined; // nouveaux comptes
   if (!newOwner.employerId) newOwner.employerId = b.id; // un propriétaire déjà employé ailleurs devient rentier
   if (!newOwner.isPlayer) newOwner.ambition = { kind: 'faire_fortune', since: state.time };
   // un ancien propriétaire salarié ailleurs garde ce travail-là (sinon fiche et registre du patron divergent)
@@ -249,7 +273,7 @@ export function transferBusiness(state: GameState, b: Business, newOwner: Charac
     oldOwner.employerId = undefined;
     oldOwner.profession = 'sans_emploi';
     oldOwner.goal = { kind: 'trouver_emploi' };
-    if (b.employees.length < b.maxWorkers && getRelation(state, newOwner.id, oldOwner.id).affinity > -40) {
+    if (!oldOwner.isPlayer && b.employees.length < b.maxWorkers && getRelation(state, newOwner.id, oldOwner.id).affinity > -40) {
       b.employees.push(oldOwner.id);
       oldOwner.employerId = b.id;
       oldOwner.profession = PROFESSION_BY_BUSINESS[b.kind];

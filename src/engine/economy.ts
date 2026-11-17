@@ -7,7 +7,7 @@ import { incidentPrice, incidentYield, jobless } from './incidents';
 import { ITEMS, RECIPES, TOOL_WEAR_PER_TOOL, PROFESSION_BY_BUSINESS, WORK_SKILL } from './data';
 import { logEvent } from './events';
 import { SEASON_YIELD, toDate } from './time';
-import type { Business, Character, GameState, Inventory, ItemId } from './types';
+import type { Books, Business, Character, GameState, Inventory, ItemId } from './types';
 import { addItem, allBusinesses, clamp, fullName, hasTrait, isOpen, ownerName, qty , businessesIn, businessSettlement, hereSettlement, settlementIdOf, hasWork } from './util';
 import { getRelation, modifyRelation } from './social';
 
@@ -43,7 +43,38 @@ export function transferMoney(state: GameState, from: Party, to: Party, amount: 
   if (from.t === to.t && from.id === to.id) return true;
   a.set(a.money - amount);
   b.set(b.money + amount);
+  if (from.t === 'b' || to.t === 'b') book(state, from, to, amount);
   return true;
+}
+
+/** Reclasse un mouvement entre le propriétaire et sa caisse comme apport ou prélèvement (et non comme vente ou achat). */
+export function ownerFlow(state: GameState, b: Business, amount: number, out: boolean): void {
+  const cur = b.books?.cur;
+  if (!cur || b.ownerId !== state.playerId) return;
+  if (out) { cur.purchases -= amount; cur.ownerOut += amount; } else { cur.sales -= amount; cur.ownerIn += amount; }
+}
+
+export function emptyBooks(state: GameState, start: number): Books {
+  return { sales: 0, purchases: 0, wages: 0, taxes: 0, ownerIn: 0, ownerOut: 0, other: 0, start, day: toDate(state.time).day };
+}
+
+/** Tient les comptes des affaires du joueur : chaque denier qui entre ou sort est rangé selon sa contrepartie. */
+function book(state: GameState, from: Party, to: Party, amount: number): void {
+  const side = (bp: Party, other: Party, out: boolean) => {
+    const b = state.businesses[bp.id];
+    if (!b || !b.ownerId || b.ownerId !== state.playerId) return;
+    const cur = (b.books ??= { cur: emptyBooks(state, b.treasury + (out ? amount : -amount)), past: [] }).cur;
+    const manorId = state.settlements[settlementIdOf(state, b.locationId)]?.manorId;
+    if (other.t === 'c') {
+      // le propriétaire qui achète son pain est un client ; ses dépôts et retraits sont reclassés par ownerFlow
+      if (other.id === b.ownerId) { if (out) cur.purchases += amount; else cur.sales += amount; }
+      else if (out) cur.wages += amount; else cur.sales += amount;
+    } else if (other.t === 'b' && other.id === manorId && b.id !== manorId) { if (out) cur.taxes += amount; else cur.other += amount; }
+    else if (other.t === 'b') { if (out) cur.purchases += amount; else cur.sales += amount; }
+    else if (out) cur.taxes += amount; else cur.other += amount;
+  };
+  if (from.t === 'b') side(from, to, true);
+  if (to.t === 'b') side(to, from, false);
 }
 
 export function transferItem(state: GameState, from: Party, to: Party, item: ItemId, n: number): boolean {
