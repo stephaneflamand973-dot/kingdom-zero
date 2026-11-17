@@ -25,7 +25,8 @@ import { ownerFlow, reserveFor } from './economy';
 import { businessesIn, charactersAt, clamp, fullName, hereSettlement, player, qty, roadPath, settlementIdOf } from './util';
 import { toDate } from './time';
 import { wearGear } from './gear';
-import { alliesAtHand, escortFactor, garrison } from './warband';
+import { alliesAtHand, escortFactor, garrison, retinue, RETINUE_PAY } from './warband';
+import { holdAudience } from './fief';
 
 const ok = (message: string, minutes: number): ActionResult => ({ ok: true, message, minutes });
 const no = (message: string): ActionResult => ({ ok: false, message, minutes: 0 });
@@ -522,22 +523,48 @@ export function hasVocation(state: GameState, p: Character): boolean {
 export function autoSteward(state: GameState, p: Character): string[] {
   const done: string[] = [];
   if (!p.alive || state.locations[p.locationId]?.kind === 'road') return done;
-  // 1. subsistance : on prélève sur la caisse de ses affaires, sans entamer leur réserve
-  if (p.money < 40) {
+  // 1. subsistance : on prélève sur la caisse de ses affaires, sans entamer leur réserve ;
+  //    la bourse doit aussi pouvoir payer l'escorte (6 d par homme et par jour) une semaine
+  const escort = retinue(state, p).length * RETINUE_PAY;
+  const low = 40 + escort * 3, target = 80 + escort * 7;
+  if (p.money < low) {
     for (const b of ownedBusinesses(state, p).sort((x, y) => y.treasury - x.treasury || (x.id < y.id ? -1 : 1))) {
-      const n = Math.min(80 - p.money, b.treasury - reserveFor(b));
+      const n = Math.min(target - p.money, b.treasury - reserveFor(b));
       if (n > 0 && transferMoney(state, P.b(b.id), P.c(p.id), n)) { ownerFlow(state, b, n, true); done.push(`${n} d prélevés sur ${b.name} pour vivre`); }
-      if (p.money >= 40) break;
+      if (p.money >= low) break;
     }
   }
-  // 2. la maison : de quoi solder la garnison un mois
+  // 2. la maison : de quoi solder la garnison un mois — d'abord sur la bourse, puis sur les bénéfices des affaires
   const h = orgList(state, 'house').find(o => o.leaderId === p.id);
   if (h) {
     const need = garrison(state, h).length * SOLDIER_PAY * 4 + 50;
-    const give = Math.min(p.money - 100, need - h.treasury);
-    if (give > 0 && transferMoney(state, P.c(p.id), P.o(h.id), give)) done.push(`${give} d versés au trésor de ${h.name} pour la solde`);
+    const give = Math.min(p.money - 100 - escort * 7, need - h.treasury);
+    if (give > 0 && transferMoney(state, P.c(p.id), P.o(h.id), give)) done.push(`${give} d de ta bourse versés au trésor de ${h.name} pour la solde`);
+    for (const b of ownedBusinesses(state, p).sort((x, y) => y.treasury - x.treasury || (x.id < y.id ? -1 : 1))) {
+      const short = need - h.treasury;
+      if (short <= 0) break;
+      const n = Math.min(short, b.treasury - reserveFor(b) - 50); // l'affaire garde sa réserve, et un peu plus
+      if (n > 0 && transferMoney(state, P.b(b.id), P.o(h.id), n)) { ownerFlow(state, b, n, true, true); done.push(`${n} d des bénéfices de ${b.name} versés au trésor de ${h.name} pour la solde`); }
+    }
   }
   return done;
+}
+
+/**
+ * Le seigneur tient audience chaque semaine dans le fief où il se trouve quand la grogne monte (10 h, 2 h).
+ * Renvoie le récit, ou rien.
+ */
+export function autoAudience(state: GameState, p: Character): string | undefined {
+  const h = orgList(state, 'house').find(o => o.leaderId === p.id);
+  if (!h || state.locations[p.locationId]?.kind === 'road' || p.needs.energy < 30) return undefined;
+  const st = hereSettlement(state, p);
+  const day = toDate(state.time).day;
+  if (st.lordHouseId !== h.id || st.unrest < 30 || (st.audienceDay !== undefined && day - st.audienceDay < 7)) return undefined;
+  const from = p.locationId;
+  p.locationId = state.businesses[st.manorId].locationId; // il se rend à l'intendance
+  const r = holdAudience(state);
+  if (!r.ok) { p.locationId = from; return undefined; }
+  return `audience tenue à ${st.name} (grogne ${st.unrest})`;
 }
 
 interface Snapshot { money: number; health: number; biz: Record<string, number>; house?: { id: string; treasury: number; soldiers: number }; job?: string }
@@ -570,6 +597,10 @@ export function liveDays(state: GameState, days: number): ActionResult {
   while (state.time < end) {
     const hour = toDate(state.time).hour;
     if (hour === 7 && p.alive && !state.encounter) stewardship.push(...autoSteward(state, p));
+    if (hour === 10 && p.alive && !state.encounter && state.time + 120 <= end) {
+      const a = autoAudience(state, p);
+      if (a) { stewardship.push(a); if (state.encounter || state.gameOver || state.pendingSuccession) break; continue; }
+    }
     // phase 6 : sans place, le pilote automatique se présente chaque matin là où l'on embauche,
     // et sinon fait une journée chez le patron qui le connaît le mieux (c'est ainsi qu'on gagne sa confiance).
     // Phase 13 : un seigneur, un soldat ou un propriétaire ne court pas les embauches.
@@ -598,7 +629,9 @@ export function liveDays(state: GameState, days: number): ActionResult {
     lines.push(`Ton intendant : ${stewardship.slice(-3).join(' ; ')}${stewardship.length > 3 ? ` (et ${stewardship.length - 3} autre${stewardship.length > 4 ? 's' : ''} fois)` : ''}.`);
   }
   if (after.health < before.health - 10) lines.push(`Santé ${before.health} → ${after.health}.`);
-  const mine = state.events.filter(e => Number(e.id.slice(1)) > seq0 && e.importance >= 2 && (e.actorId === p.id || e.targetId === p.id || p.knownEvents.includes(e.id)));
+  const seen = new Set<string>();
+  const mine = state.events.filter(e => Number(e.id.slice(1)) > seq0 && e.importance >= 2 && (e.actorId === p.id || e.targetId === p.id || p.knownEvents.includes(e.id)))
+    .filter(e => !seen.has(e.text) && !!seen.add(e.text)); // un fait répété ne compte qu'une fois
   const why = state.encounter ? ' Un imprévu interrompt le cours des jours.' : state.pendingSuccession ? ' La mort t’a surpris.' : '';
   return ok(`${formatDuration(elapsed)} passent au fil des jours. ${lines.join(' ')}${mine.length ? ` Faits marquants : ${mine.slice(-3).map(e => e.text).join(' ')}` : ''}${why}`, elapsed);
 }

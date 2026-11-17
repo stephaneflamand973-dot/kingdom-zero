@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 187 tests automatisés (scénarios A–G, phases 2 à 13, invariants, fuzz) |
+| `npm test` | 188 tests automatisés (scénarios A–G, phases 2 à 13, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -683,15 +683,25 @@ heure, par la même intelligence que les habitants : il mange, dort, travaille, 
 - **le propriétaire vit de son affaire** : quand sa bourse passe sous 40 d, l'intendant prélève de quoi vivre
   (jusqu'à 80 d), sans entamer la réserve de la caisse. Avant, il mourait de faim à côté d'une caisse pleine ;
 - **la maison du seigneur garde de quoi solder sa garnison quatre semaines** : l'intendant y verse ce qui manque,
-  si ta bourse dépasse 100 d. La maison ne lève plus de soldats d'elle-même : c'est toi qui décides (onglet
-  Pouvoir, « Garnison ») ;
+  d'abord depuis ta bourse au-delà de 100 d, puis sur les bénéfices de tes affaires. Chaque affaire garde sa
+  réserve, plus 50 d, et le livre de comptes inscrit ces versements comme prélèvements. La maison ne lève plus de
+  soldats d'elle-même : c'est toi qui décides (onglet Pouvoir, « Garnison ») ;
+- **l'escorte est payée** : la bourse garde de quoi solder tes hommes d'armes (6 d par homme et par jour) une
+  semaine ;
+- **le seigneur tient audience** chaque semaine dans le fief où il se trouve quand la grogne atteint 30 ;
 - **le pilote respecte ton train de vie** : en frugal ou modeste, il achète son pain au fournil plutôt qu'à
   l'auberge (5 d au lieu de 9 à 12), ne boit que s'il manque de compagnie, et ne dîne pas à l'auberge. Les
   dépenses courantes sont divisées par deux environ ;
 - **un vrai bilan à l'arrivée** : bourse, heures travaillées et place, caisse et ouvriers de chaque affaire,
-  trésor et soldats de ta maison, ce qu'a fait l'intendant, santé si elle a baissé, puis les faits marquants.
+  trésor et soldats de ta maison, ce qu'a fait l'intendant, santé si elle a baissé, puis les faits marquants
+  (sans doublons).
 
-Ce que le pilote ne fait pas : il ne tient pas audience, ne bâtit rien, ne lève ni ne renvoie de soldats, ne
+Scénario de référence (testé) : un seigneur tient Valcendre et possède le fournil, avec 3 hommes d'armes et
+4 soldats. Sur 16 semaines au pilote automatique et trois mondes, personne ne déserte et la maison reste solvable.
+Le fournil dégage 100 à 600 d de résultat par semaine et paie la garnison. Une guerre déclarée en semaine 4 prend
+Saint-Aubin-sur-Loue en deux batailles, sans perte.
+
+Ce que le pilote ne fait pas : il ne bâtit rien, ne lève ni ne renvoie de soldats, ne
 déclare pas de guerre, n'entre pas en lice, n'accepte pas de requête et ne change pas ton impôt ni tes consignes
 d'affaire. Une rencontre (brigands, garde) l'interrompt.
 

@@ -48,10 +48,10 @@ export function transferMoney(state: GameState, from: Party, to: Party, amount: 
 }
 
 /** Reclasse un mouvement entre le propriétaire et sa caisse comme apport ou prélèvement (et non comme vente ou achat). */
-export function ownerFlow(state: GameState, b: Business, amount: number, out: boolean): void {
+export function ownerFlow(state: GameState, b: Business, amount: number, out: boolean, toHouse = false): void {
   const cur = b.books?.cur;
   if (!cur || b.ownerId !== state.playerId) return;
-  if (out) { cur.purchases -= amount; cur.ownerOut += amount; } else { cur.sales -= amount; cur.ownerIn += amount; }
+  if (out) { if (toHouse) cur.taxes -= amount; else cur.purchases -= amount; cur.ownerOut += amount; } else { cur.sales -= amount; cur.ownerIn += amount; }
 }
 
 export function emptyBooks(state: GameState, start: number): Books {

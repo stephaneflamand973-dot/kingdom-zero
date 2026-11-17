@@ -160,3 +160,46 @@ describe('Pilote automatique', () => {
     expect(paid).toBe(true);
   });
 });
+
+describe('Scénario : un seigneur avec une affaire, des hommes d’armes et une garnison', () => {
+  it('huit semaines au pilote automatique : personne ne déserte, l’affaire paie la garnison, les comptes restent exacts', async () => {
+    const { fireEmployee, hireManAtArms, houseTreasury, raiseSoldier, retinue, soldierRecruits, itemBalance, totalItems } = await import('../src/engine');
+    const s = createWorld(4302);
+    const m0 = totalMoney(s), i0 = totalItems(s);
+    const p = fund(s, 1500);
+    const bakery = allBusinesses(s).find(b => b.kind === 'bakery' && b.locationId && s.locations[b.locationId])!;
+    transferBusiness(s, bakery, p, bakery.ownerId ? s.characters[bakery.ownerId] : undefined);
+    p.title = 'ecuyer';
+    p.locationId = s.settlements.valcendre.squareId;
+    expect(foundHouse(s).ok).toBe(true);
+    const h = houseOfPlayer(s)!;
+    s.settlements.valcendre.lordHouseId = h.id;
+    houseTreasury(s, 300);
+    for (const c of soldierRecruits(s).slice(0, 4)) expect(raiseSoldier(s, c.id).ok).toBe(true);
+    for (const c of soldierRecruits(s).slice(0, 3)) {
+      const job = c.employerId ? s.businesses[c.employerId] : undefined;
+      if (job) fireEmployee(s, job, c, 'entre au service du seigneur', true);
+      c.locationId = p.locationId;
+      expect(hireManAtArms(s, c.id).ok).toBe(true);
+    }
+    manage(s, bakery.id, { kind: 'draw', delta: 40 });
+    const soldiers = garrison(s, h).length, escort = retinue(s).length;
+    expect(soldiers).toBe(4);
+    expect(escort).toBe(3);
+    let fromBusiness = 0;
+    for (let w = 0; w < 8; w++) {
+      const r = liveDays(s, 7);
+      while (s.encounter) (await import('../src/engine')).encounterAction(s, 'guard');
+      if (/bénéfices de/.test(r.message)) fromBusiness++;
+      expect(p.alive).toBe(true);
+    }
+    expect(garrison(s, h).length).toBe(soldiers); // aucune désertion faute de solde
+    expect(retinue(s).length).toBe(escort);       // l'escorte est payée chaque jour
+    expect(activeContract(s, p.id)).toBeUndefined();
+    expect(fromBusiness).toBeGreaterThan(0);       // les bénéfices du fournil ont soldé la garnison
+    expect(bakery.books!.past.length).toBeGreaterThan(0);
+    expect(checkIntegrity(s)).toEqual([]);
+    expect(moneyBalance(m0, s)).toBe(0);
+    expect(itemBalance(i0, s, totalItems(s))).toEqual({});
+  }, 60000);
+});
