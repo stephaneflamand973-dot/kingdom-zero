@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { backupSlot, createWorld, formatClock, formatDate, loadFromStore, saveToStore, toDate, type ActionResult, type GameState, type KVStore, type PlayerSetup, type WorldEvent } from '../engine';
 import { sound } from './audio';
+import { cloudStore, cloudSync, flushCloud, memoryStore } from './cloud';
 
 export interface Feed { id: number; time: number; text: string; ok: boolean }
 export type ToastTone = 'good' | 'bad' | 'info' | 'major';
@@ -30,9 +31,13 @@ function toneOf(e: WorldEvent, playerId: string): ToastTone {
   return e.importance >= 3 ? 'major' : 'info';
 }
 
-const store: KVStore | null = (() => {
+const local: KVStore | null = (() => {
   try { const t = '__kz_test__'; localStorage.setItem(t, '1'); localStorage.removeItem(t); return localStorage; } catch { return null; }
 })();
+/** Le navigateur garde-t-il les sauvegardes ? (sinon, seule la copie en ligne les conserve) */
+export const localAvailable = !!local;
+// chaque sauvegarde écrite dans le navigateur part aussi dans l'espace en ligne privé du joueur
+const store: KVStore | null = cloudStore(local ?? memoryStore());
 
 /** Charge la partie au démarrage : la sauvegarde automatique, sinon la rapide ou la copie de sécurité. */
 function savedState(): { state?: GameState; error?: string; note?: string } {
@@ -80,6 +85,7 @@ export function useGame() {
     if (fresh.some(f => f.tone === 'major' || f.tone === 'bad')) sound.play('bell');
   }, []);
   const lastAutoDay = useRef(toDate(ref.current.time).day);
+  const acted = useRef(false); // le joueur a-t-il déjà joué depuis l'ouverture ?
 
   const push = useCallback((text: string, ok: boolean) => {
     seq.current += 1;
@@ -89,6 +95,7 @@ export function useGame() {
 
   /** Exécute une action du moteur, journalise son résultat et rafraîchit l'affichage. */
   const act = useCallback((fn: (s: GameState) => ActionResult) => {
+    acted.current = true;
     const before = ref.current;
     const seq0 = before.eventSeq, money0 = before.characters[before.playerId].money;
     const pid = before.playerId;
@@ -148,9 +155,30 @@ export function useGame() {
   }, [push]);
   const quickLoad = useCallback(() => { const err = loadFrom('rapide'); if (err) push(err === 'Aucune sauvegarde dans cet emplacement.' ? 'Aucune sauvegarde rapide : appuie d’abord sur K ou 💾.' : err, false); }, [loadFrom, push]);
   useEffect(() => { if (startupNote) push(startupNote, true); }, [startupNote, push]);
+  // sauvegarde en ligne : on récupère une partie plus récente (autre appareil, navigateur vidé…)
+  useEffect(() => {
+    let alive = true;
+    void cloudSync(store!, () => acted.current).then(pulled => {
+      if (!alive) return;
+      if (pulled.includes('auto') && !acted.current) {
+        const r = loadFromStore(store!, 'auto');
+        if (r.state) {
+          ref.current = r.state;
+          lastAutoDay.current = toDate(r.state.time).day;
+          setFeed([]); setToasts([]);
+          push(saved.current.state ? 'Partie reprise depuis ta sauvegarde en ligne : elle était plus récente que celle de ce navigateur.' : 'Partie reprise depuis ta sauvegarde en ligne.', true);
+          setCreating(false);
+          setVersion(v => v + 1);
+        }
+      } else if (pulled.includes('enligne')) {
+        push('Une partie plus récente existe en ligne (autre appareil) : menu Partie → « Sauvegarde en ligne (autre appareil) ».', true);
+      } else if (pulled.length) push(`Sauvegardes récupérées en ligne : ${pulled.length} emplacement${pulled.length > 1 ? 's' : ''}.`, true);
+    });
+    return () => { alive = false; };
+  }, [push]);
   // filet de sécurité : sauvegarde automatique quand on quitte ou masque la page
   useEffect(() => {
-    const flush = () => { if (!creatingRef.current) saveTo('auto', true); };
+    const flush = () => { if (!creatingRef.current) { saveTo('auto', true); flushCloud(store!); } };
     const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', onVis);

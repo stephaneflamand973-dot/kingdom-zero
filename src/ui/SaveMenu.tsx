@@ -1,11 +1,13 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { cloudStatus, onCloudStatus, type CloudStatus } from './cloud';
+import { localAvailable } from './useGame';
 import { deleteSlot, deserialize, formatClock, formatDate, saveFileName, serialize, slotInfo } from '../engine';
 import type { Game } from './useGame';
 import { useModal } from './a11y';
 
 const MANUAL = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6'];
 const SLOT_NAME: Record<string, string> = {
-  auto: 'Sauvegarde automatique', rapide: 'Sauvegarde rapide (K / L)', precedente: 'Partie précédente (copie de sécurité)', illisible: 'Sauvegarde mise de côté (illisible auparavant)',
+  auto: 'Sauvegarde automatique', enligne: 'Sauvegarde en ligne (autre appareil)', rapide: 'Sauvegarde rapide (K / L)', precedente: 'Partie précédente (copie de sécurité)', illisible: 'Sauvegarde mise de côté (illisible auparavant)',
   slot1: 'Emplacement I', slot2: 'Emplacement II', slot3: 'Emplacement III', slot4: 'Emplacement IV', slot5: 'Emplacement V', slot6: 'Emplacement VI',
 };
 
@@ -26,6 +28,8 @@ export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void })
   const [, force] = useState(0);
   const file = useRef<HTMLInputElement>(null);
   const ref = useModal<HTMLDivElement>(onClose);
+  const [cloud, setCloud] = useState<CloudStatus>(cloudStatus());
+  useEffect(() => onCloudStatus(setCloud), []);
 
   const doSave = (slot: string) => {
     if (saveTo(slot, true)) { setMsg(`Partie sauvegardée dans « ${SLOT_NAME[slot]} ».`); force(x => x + 1); }
@@ -93,15 +97,21 @@ export function SaveMenu({ game, onClose }: { game: Game; onClose: () => void })
         <button className="close" onClick={onClose} aria-label="Fermer">×</button>
         <h2>Registre de la partie</h2>
         <p className="muted small">
-          La partie se sauvegarde seule chaque matin et quand tu quittes la page. Les sauvegardes restent dans ce navigateur :
-          pour les garder à l’abri ou changer d’appareil, télécharge le fichier. Graine du monde : {state.seed} · format v{state.version}.
+          La partie se sauvegarde seule chaque matin et quand tu quittes la page, dans ce navigateur et en ligne.
+          Le fichier téléchargé reste une copie de plus, que tu gardes toi-même. Graine du monde : {state.seed} · format v{state.version}.
         </p>
-        {!store && <p className="warn">Le stockage du navigateur est indisponible ici : seul le fichier téléchargé conserve ta partie.</p>}
+        <p className={cloud.state === 'on' ? 'notice small' : cloud.state === 'connecting' ? 'muted small' : 'warn small'} role="status">
+          {cloud.state === 'on' ? <>☁ Sauvegarde en ligne active : chaque emplacement est aussi gardé dans ton espace privé, lié à ton compte, et te suit d’un appareil à l’autre{cloud.lastPush ? ` (dernier envoi ${ago(new Date(cloud.lastPush).toISOString())})` : ''}.</>
+            : cloud.state === 'connecting' ? '☁ Connexion à la sauvegarde en ligne…'
+            : `☁ ${cloud.message ?? 'Sauvegarde en ligne indisponible.'}`}
+        </p>
+        {!localAvailable && <p className="warn">Le stockage du navigateur est indisponible ici : {cloud.state === 'on' ? 'ta partie n’est gardée qu’en ligne.' : 'seul le fichier téléchargé conserve ta partie.'}</p>}
         <ul className="slots">
           {row('auto', false)}
           {row('rapide', false)}
           {store && slotInfo(store, 'precedente') && row('precedente', false)}
           {store && slotInfo(store, 'illisible') && row('illisible', false)}
+          {store && slotInfo(store, 'enligne') && row('enligne', false)}
           {MANUAL.map(s => row(s, true))}
         </ul>
         <div className="save-row">

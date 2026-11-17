@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 196 tests automatisés (scénarios A–G, phases 2 à 14, invariants, fuzz) |
+| `npm test` | 202 tests automatisés (scénarios A–G, phases 2 à 14, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -759,6 +759,24 @@ Mesure sur le fournil de Valcendre (moyenne sur 8 mondes, 16 semaines, salaire i
 
 Les mêmes règles valent pour les propriétaires PNJ. Sur 16 ans (4 mondes) : aucun mort de faim, chômage de 2 à
 8 %, comptes exacts.
+
+## Sauvegarde en ligne
+
+La page publiée garde maintenant chaque emplacement de sauvegarde (automatique, rapide, I à VI, copie de sécurité)
+dans l'espace **privé** du joueur, lié à son compte claude.ai (capacité `db`, chemin `data/users/<id>/`). Même le
+propriétaire de la page ne peut pas le lire.
+- **Ce qui part en ligne.** Toute sauvegarde écrite dans le navigateur, compressée (gzip, environ 40 Ko pour une
+  partie de 200 Ko) et découpée en morceaux si elle dépasse 200 000 caractères.
+- **Quand.** La sauvegarde automatique part au plus une fois toutes les 45 secondes, et aussitôt quand on quitte
+  ou masque la page ; les autres emplacements partent tout de suite.
+- **Au démarrage.** Un emplacement plus récent en ligne (ou absent du navigateur) est récupéré ; si la sauvegarde
+  automatique en ligne est plus récente, la partie reprend d'elle-même. Si l'on a déjà joué avant la fin de la
+  synchronisation, elle est rangée à part (« Sauvegarde en ligne (autre appareil) ») au lieu d'écraser la partie
+  en cours. Ce que le serveur n'a pas encore (par exemple les sauvegardes d'avant cette version) y part aussitôt.
+- **Effacer un emplacement** l'efface aussi en ligne.
+- **Sans espace en ligne** (page ouverte hors de claude.ai, ou visiteur non connecté), tout fonctionne comme avant :
+  le menu Partie l'indique. Le fichier téléchargé reste une copie de plus, que l'on garde soi-même.
+- Code : `src/ui/cloud.ts` ; tests : `tests/cloud.test.ts`.
 
 ## État réel du développement
 
