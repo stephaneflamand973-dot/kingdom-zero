@@ -1,4 +1,4 @@
-import { enterTourney, settlementIdOf, TOURNEY_FEE, tourneyOpen, upcomingTourney, liveDays, orgsOf, patrol, festivalAt, festivalTonight, feastDrink, drinkAle, eat, forage, formatClock, minutesUntilHour, qty, sleep, sleepOptions, toDate, train, wait } from '../engine';
+import { enterTourney, settlementIdOf, TOURNEY_FEE, tourneyOpen, upcomingTourney, liveDays, orgsOf, patrol, festivalAt, festivalTonight, feastDrink, drinkAle, eat, forage, formatClock, minutesUntilHour, qty, sleep, sleepOptions, toDate, train, wait, practicableHere, PRACTICE, SKILL_NAMES } from '../engine';
 import { goals } from './HelpModal';
 import type { Game } from './useGame';
 
@@ -39,7 +39,9 @@ export function ActionPanel({ game, showGuide = true, onHelp }: { game: Game; sh
           {orgsOf(state, p.id, 'house').some(h => h.roles[p.id] === 'soldat') && (loc.kind === 'square' || loc.kind === 'road') && <button className="btn" disabled={over} onClick={() => act(s => patrol(s, 4))} title="4 h · service de la garnison">🛡 Patrouiller (4 h)</button>}
           {loc.kind === 'woodlot' && <button className="btn" disabled={over} onClick={() => act(s => forage(s, 3))} title="3 h · Agriculture">🪵 Ramasser du bois (3 h)</button>}
           {loc.kind === 'woodlot' && <button className="btn" disabled={over} onClick={() => act(s => forage(s, 3, 'grain'))} title="3 h · racines, baies et glands : maigre pitance, surtout l’hiver">🌰 Cueillir (3 h)</button>}
-          {loc.kind === 'square' && <button className="btn" disabled={over} onClick={() => act(train)} title="1 h · Combat">⚔ S'entraîner</button>}
+          {practicableHere(state).map(k => (
+            <button key={k} className="btn" disabled={over || p.skills[k] >= 100} onClick={() => act(s => train(s, k))} title={`1 h · ${SKILL_NAMES[k]} ${p.skills[k]}/100`}>{k === 'combat' ? '⚔ ' : '📖 '}{PRACTICE[k].label}</button>
+          ))}
           <button className="btn ghost" disabled={over} onClick={() => act(s => wait(s, 60))} title="touche A" aria-keyshortcuts="A">⌛ Attendre 1 h<Kbd k="A" /></button>
           <button className="btn ghost" disabled={over} onClick={() => act(s => wait(s, minutesUntilHour(s.time, stop.hour)))} title="touche J" aria-keyshortcuts="J">⌛ Jusqu'{stop.label}<Kbd k="J" /></button>
           <button className="btn ghost" disabled={over} onClick={() => act(s => liveDays(s, 7))} title="L’IA conduit ton personnage : il travaille, mange, dort. S’arrête en cas d’imprévu. Touche V" aria-keyshortcuts="V">📅 Vivre une semaine<Kbd k="V" /></button>

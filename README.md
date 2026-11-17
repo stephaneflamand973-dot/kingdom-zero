@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 188 tests automatisés (scénarios A–G, phases 2 à 13, invariants, fuzz) |
+| `npm test` | 189 tests automatisés (scénarios A–G, phases 2 à 13, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -704,6 +704,23 @@ Saint-Aubin-sur-Loue en deux batailles, sans perte.
 Ce que le pilote ne fait pas : il ne bâtit rien, ne lève ni ne renvoie de soldats, ne
 déclare pas de guerre, n'entre pas en lice, n'accepte pas de requête et ne change pas ton impôt ni tes consignes
 d'affaire. Une rencontre (brigands, garde) l'interrompt.
+
+## Compétences sans plafond
+
+Aucune compétence n'est bridée : chacune peut atteindre 100 pour qui s'exerce assez.
+- **La courbe s'adoucit.** Le palier suivant coûte 6 + 0,15 × niveau points d'expérience, contre 6 + 0,6 × niveau
+  avant. De 99 à 100, il faut 21 points au lieu de 65. Monter de 10 à 100 demande environ 800 heures
+  d'entraînement avec une intelligence moyenne, contre 2 200 avant : 130 jours de jeu à six heures par jour,
+  la moitié avec l'atout « Maîtrise double ».
+- **Chaque compétence s'entraîne** (une heure, au lieu qui lui correspond) :
+  - combat, commandement et discrétion sur la place ;
+  - agriculture à la ferme, au bois ou à la mine ;
+  - artisanat à la forge ou au fournil ;
+  - commerce à la halle ;
+  - gestion à l'intendance ;
+  - diplomatie à l'auberge.
+- Les habitants profitent de la même courbe. Sur 16 ans, ils deviennent plus habiles et produisent davantage.
+  Le chômage passe de 6 à 16 % à environ 4 %, sans mort de faim, avec des comptes exacts.
 
 ## État réel du développement
 

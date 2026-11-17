@@ -99,7 +99,7 @@ function Perso({ state, game }: { state: GameState; game: Game }) {
           );
         })}
       </div>
-      <p className="muted small">Les compétences progressent par la pratique : travail, commerce, conversation, entraînement. Plus le niveau est élevé, plus l’apprentissage est lent.</p>
+      <p className="muted small">Les compétences progressent par la pratique : travail, commerce, conversation, entraînement. Aucun plafond : chaque compétence peut atteindre 100 pour qui s’exerce assez (chaque lieu permet de s’exercer à son métier). Le pas grandit un peu avec le niveau.</p>
       <div className="facts">
         <span>Travail aujourd'hui : <b>{p.hoursWorkedToday} h</b></span>
         {p.unpaidWages > 0 && <span className="ko">Salaires impayés : {p.unpaidWages} d</span>}

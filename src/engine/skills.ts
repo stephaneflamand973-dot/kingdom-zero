@@ -1,9 +1,10 @@
-// Progression des compétences : apprentissage par la pratique, rendements décroissants.
+// Progression des compétences : apprentissage par la pratique. Aucun plafond hormis 100 : la marche
+// s'allonge doucement avec le niveau, mais quiconque s'exerce assez finit par atteindre la maîtrise.
 import { logEvent } from './events';
 import { SKILL_NAMES } from './data';
 import type { Character, GameState, SkillId } from './types';
 
-export function xpForNextLevel(level: number): number { return 6 + level * 0.6; }
+export function xpForNextLevel(level: number): number { return 6 + level * 0.15; }
 
 export function gainXp(state: GameState, c: Character, skill: SkillId, amount: number): number {
   if (c.skills[skill] >= 100) return 0;

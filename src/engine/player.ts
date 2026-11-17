@@ -22,7 +22,7 @@ import { advanceTime, recordPrices } from './sim';
 import { gainXp } from './skills';
 import { applyBeliefEffect, getRelation, modifyRelation, shareRumor } from './social';
 import { formatDuration, minutesUntilHour, toDate } from './time';
-import type { ActionResult, Business, BusinessKind, Character, GameState, ItemId } from './types';
+import type { ActionResult, Business, BusinessKind, Character, GameState, ItemId, SkillId } from './types';
 import { charactersAt, clamp, fullName, hasTrait, isOpen, player, qty, travelMinutes , businessesAt, businessSettlement, settlementIdOf } from './util';
 
 const ok = (message: string, minutes: number, eventIds?: string[]): ActionResult => ({ ok: true, message, minutes, eventIds });
@@ -283,17 +283,41 @@ export function wait(state: GameState, minutes: number): ActionResult {
   return ok(`Tu laisses passer ${formatDuration(minutes)}.`, minutes);
 }
 
-export function train(state: GameState): ActionResult {
+/** Où et comment chaque compétence s'exerce (une heure, au lieu qui convient). */
+export const PRACTICE: Record<SkillId, { kinds: string[]; note: string; label: string; you: string }> = {
+  combat: { kinds: ['square'], note: 'S’entraîne au bâton', label: 'Manier le bâton', you: 'Tu t’entraînes une heure au bâton.' },
+  commandement: { kinds: ['square'], note: 'Étudie l’ordre de bataille', label: 'Exercer le commandement', you: 'Tu étudies une heure l’ordre de bataille.' },
+  discretion: { kinds: ['square'], note: 'S’exerce à passer inaperçu', label: 'S’exercer à la discrétion', you: 'Tu t’exerces une heure à passer inaperçu dans la foule.' },
+  agriculture: { kinds: ['farm', 'woodlot', 'mine'], note: 'S’exerce aux travaux des champs', label: 'S’exercer aux travaux', you: 'Tu t’exerces une heure aux gestes du métier.' },
+  artisanat: { kinds: ['forge', 'bakery'], note: 'S’exerce à l’établi', label: 'S’exercer à l’artisanat', you: 'Tu t’exerces une heure à l’établi.' },
+  commerce: { kinds: ['market'], note: 'Observe les marchands et leurs comptes', label: 'Étudier le négoce', you: 'Tu observes une heure les marchands et leurs comptes.' },
+  gestion: { kinds: ['manor'], note: 'Étudie les registres de l’intendance', label: 'Étudier les registres', you: 'Tu étudies une heure les registres de l’intendance.' },
+  diplomatie: { kinds: ['tavern'], note: 'S’exerce à l’art de la parole', label: 'S’exercer à la parole', you: 'Tu t’exerces une heure à l’art de la parole.' },
+};
+
+/** Compétences qu'on peut exercer là où se trouve le joueur. */
+export function practicableHere(state: GameState): SkillId[] {
+  const kind = state.locations[player(state).locationId]?.kind;
+  return (Object.keys(PRACTICE) as SkillId[]).filter(k => PRACTICE[k].kinds.includes(kind));
+}
+
+/** S'exercer une heure : toute compétence progresse jusqu'à 100 pour qui s'entraîne assez. */
+export function train(state: GameState, skill: SkillId = 'combat'): ActionResult {
   const g = guard(state); if (g) return g;
   const p = player(state);
-  if (state.locations[p.locationId].kind !== 'square') return no("On s'entraîne aux armes sur la place centrale.");
+  const def = PRACTICE[skill];
+  if (!def.kinds.includes(state.locations[p.locationId].kind)) {
+    return no(skill === 'combat' ? "On s'entraîne aux armes sur la place centrale." : `${SKILL_NAMES[skill]} : cela s'exerce ${def.kinds.map(k => KIND_PLACE[k] ?? k).join(' ou ')}.`);
+  }
   if (p.needs.energy < 20) return no('Tu es trop fatigué pour t’entraîner.');
-  const before = p.skills.combat;
-  p.activity = { kind: 'train', locationId: p.locationId, since: state.time, note: 'S’entraîne au bâton' };
-  gainXp(state, p, 'combat', 1.6);
+  if (p.skills[skill] >= 100) return no(`Tu as atteint la maîtrise complète en ${SKILL_NAMES[skill]} (100).`);
+  const before = p.skills[skill];
+  p.activity = { kind: 'train', locationId: p.locationId, since: state.time, note: def.note };
+  gainXp(state, p, skill, 1.6);
   finish(state, p, 60);
-  return ok(`Tu t'entraînes une heure au bâton.${p.skills.combat > before ? ` Combat ${p.skills.combat}.` : ''}`, 60);
+  return ok(`${def.you}${p.skills[skill] > before ? ` ${SKILL_NAMES[skill]} ${p.skills[skill]}.` : ''}`, 60);
 }
+const KIND_PLACE: Record<string, string> = { square: 'sur la place', farm: 'à la ferme', woodlot: 'au bois', mine: 'à la mine', forge: 'à la forge', bakery: 'au fournil', market: 'à la halle', manor: 'à l’intendance', tavern: 'à l’auberge' };
 
 /** Ramasser du bois mort en lisière : maigre revenu mais accessible à tous. */
 export function forage(state: GameState, hours: number, item: 'wood' | 'grain' = 'wood'): ActionResult {

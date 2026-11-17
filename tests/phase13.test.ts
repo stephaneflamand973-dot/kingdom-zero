@@ -203,3 +203,28 @@ describe('Scénario : un seigneur avec une affaire, des hommes d’armes et une 
     expect(itemBalance(i0, s, totalItems(s))).toEqual({});
   }, 60000);
 });
+
+describe('Pas de plafond de compétence', () => {
+  it('quiconque s’entraîne assez atteint 100, et chaque lieu exerce son métier', async () => {
+    const { train, practicableHere, xpForNextLevel } = await import('../src/engine');
+    const s = createWorld(1400);
+    const p = s.characters.player;
+    p.locationId = s.settlements.valcendre.squareId;
+    p.skills.combat = 10;
+    let h = 0;
+    while (p.skills.combat < 100 && h < 1200) { p.needs.energy = 90; p.needs.hunger = 0; p.health = 100; p.sick = 0; expect(train(s, 'combat').ok).toBe(true); h++; }
+    expect(p.skills.combat).toBe(100);
+    expect(h).toBeLessThan(1000);
+    expect(train(s, 'combat').ok).toBe(false); // maîtrise complète
+    expect(xpForNextLevel(99)).toBeLessThan(25);
+    // chaque compétence a un lieu où s'exercer
+    const kinds = new Set(Object.values(s.locations).map(l => l.kind));
+    for (const k of ['combat', 'commandement', 'discretion', 'agriculture', 'artisanat', 'commerce', 'gestion', 'diplomatie'] as const) {
+      const loc = Object.values(s.locations).find(l => practicableHereAt(l.kind, k));
+      expect(loc, k).toBeTruthy();
+      p.locationId = loc!.id;
+      expect(practicableHere(s)).toContain(k);
+    }
+    function practicableHereAt(kind: string, k: string) { return kinds.has(kind) && ({ combat: ['square'], commandement: ['square'], discretion: ['square'], agriculture: ['farm', 'woodlot', 'mine'], artisanat: ['forge', 'bakery'], commerce: ['market'], gestion: ['manor'], diplomatie: ['tavern'] } as Record<string, string[]>)[k].includes(kind); }
+  }, 60000);
+});
