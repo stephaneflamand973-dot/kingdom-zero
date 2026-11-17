@@ -35,4 +35,5 @@ export * from './gear';
 export * from './warband';
 export * from './fief';
 export * from './tourney';
+export * from './mastery';
 export { chooseTavern } from './npc';

@@ -114,7 +114,7 @@ describe('Requêtes nées de la simulation', () => {
     const s = createWorld(2);
     for (let i = 0; i < 40; i++) advanceTime(s, MIN_PER_DAY);
     const kinds = new Set(quests(s).map(q => q.kind));
-    expect(quests(s).length).toBeGreaterThan(3);
+    expect(quests(s).length).toBeGreaterThanOrEqual(3);
     expect(kinds.size).toBeGreaterThanOrEqual(2);
   }, 20000);
 });

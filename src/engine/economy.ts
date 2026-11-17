@@ -3,6 +3,7 @@
 // Invariant : l'argent et les objets ne sont jamais créés lors d'un échange ;
 // seule la production (recettes) crée des biens et seule la consommation en détruit.
 // ─────────────────────────────────────────────────────────────
+import { commerceMargin, gestionWear, masterBonusRate, masterLabor, qualityPremium } from './mastery';
 import { incidentPrice, incidentYield, jobless } from './incidents';
 import { ITEMS, RECIPES, TOOL_WEAR_PER_TOOL, PROFESSION_BY_BUSINESS, WORK_SKILL } from './data';
 import { logEvent } from './events';
@@ -111,13 +112,14 @@ export function askPrice(state: GameState, b: Business, item: ItemId): number {
   if (b.kind === 'market') p *= 1.15;                   // marge du revendeur
   if (b.kind === 'tavern' && item === 'bread') p *= 1.3; // repas servi
   p *= incidentPrice(state, b);                          // foire (phase 6)
+  p *= 1 + commerceMargin(state, b) + qualityPremium(state, b); // négoce et qualité du maître (phase 14)
   return Math.max(1, Math.round(p));
 }
 
 /** Prix offert par l'établissement pour racheter un bien. */
-export function bidPrice(_state: GameState, b: Business, item: ItemId): number {
+export function bidPrice(state: GameState, b: Business, item: ItemId): number {
   const base = ITEMS[item].base;
-  const p = base * clamp(Math.sqrt(pressure(b, item)), 0.4, 1.5) * 0.75;
+  const p = base * clamp(Math.sqrt(pressure(b, item)), 0.4, 1.5) * 0.75 * (1 - commerceMargin(state, b));
   return Math.max(1, Math.round(p));
 }
 
@@ -157,7 +159,9 @@ export function sellersOf(state: GameState, item: ItemId, hour: number, buyer: C
     if (tradeRefusal(state, b, buyer)) continue;
     out.push({ b, price: priceForCharacter(state, b, buyer, item, 'buy') });
   }
-  out.sort((x, y) => x.price - y.price || (x.b.id < y.b.id ? -1 : 1));
+  // à prix voisin, on va chez le meilleur artisan : la qualité vaut deux fois sa prime (phase 14)
+  const value = (x: { b: Business; price: number }) => x.price / (1 + 2 * qualityPremium(state, x.b));
+  out.sort((x, y) => value(x) - value(y) || x.price - y.price || (x.b.id < y.b.id ? -1 : 1));
   return out;
 }
 
@@ -178,7 +182,9 @@ export function runProduction(state: GameState, b: Business): number {
   const d = toDate(state.time);
   // Saison (pour les cultures) et spécialisation de la localité (terres, filons)
   const mult = (r.seasonal ? SEASON_YIELD[d.season] : 1) * (businessSettlement(state, b).yields[b.kind] ?? 1) * incidentYield(state, b)
-    * ((b.kind === 'farm' || b.kind === 'bakery') && hasWork(state, businessSettlement(state, b).id, 'moulin') ? 1.15 : 1); // moulin banal (phase 12)
+    * ((b.kind === 'farm' || b.kind === 'bakery') && hasWork(state, businessSettlement(state, b).id, 'moulin') ? 1.15 : 1) // moulin banal (phase 12)
+    * masterLabor(state, b); // le savoir-faire du propriétaire (phase 14)
+  const bonusRate = masterBonusRate(state, b), wearRate = gestionWear(state, b);
   const effLabor = r.labor / mult;
   let batches = 0;
   while (b.laborPool >= effLabor) {
@@ -208,10 +214,19 @@ export function runProduction(state: GameState, b: Business): number {
       addItem(b.produced, it, n);
       addItem(state.ledger.produced, it, n);
     }
+    // tour de main du maître : une pièce de plus de temps en temps (phase 14)
+    if (bonusRate > 0) {
+      b.craftBonus = (b.craftBonus ?? 0) + bonusRate;
+      if (b.craftBonus >= 1) {
+        b.craftBonus -= 1;
+        const it = Object.keys(r.outputs)[0] as ItemId;
+        addItem(b.stock, it, 1); addItem(b.produced, it, 1); addItem(state.ledger.produced, it, 1);
+      }
+    }
     b.laborPool -= effLabor;
     batches++;
     if (r.usesTools) {
-      b.toolWear += r.labor;
+      b.toolWear += r.labor * wearRate;
       while (b.toolWear >= TOOL_WEAR_PER_TOOL && qty(b.stock, 'tools') > 0) {
         b.toolWear -= TOOL_WEAR_PER_TOOL;
         addItem(b.stock, 'tools', -1);
@@ -484,11 +499,14 @@ export function fireEmployee(state: GameState, b: Business, e: Character, reason
 /** Ajustement hebdomadaire des salaires selon la santé financière. */
 export function weeklyWageReview(state: GameState, b: Business): void {
   const reserve = reserveFor(b);
-  if (b.daysInDeficit >= 4 && b.wage > 2) {
+  // une semaine « difficile » ne fait baisser les gages que si la caisse est vraiment juste (phase 14 : une affaire riche
+  // qui achète son grain voit sa caisse baisser plusieurs jours sans être en difficulté)
+  if (b.daysInDeficit >= 4 && b.wage > 2 && b.treasury < reserve * 2) {
     b.wage -= 1;
     logEvent(state, { type: 'production', businessId: b.id, importance: 2, witnesses: b.employees.slice(),
       text: `${b.name} réduit ses salaires à ${b.wage} d de l'heure après une semaine difficile.` });
-  } else if (b.treasury > reserve * 3 && b.wage < 9) {
+  } else if (b.treasury > reserve * 3 && b.wage < 9 && !(b.ownerId && state.characters[b.ownerId]?.isPlayer)) {
+    // (le joueur fixe lui-même les salaires de ses affaires : on ne les relève pas à sa place — phase 14)
     b.wage += 1;
     logEvent(state, { type: 'production', businessId: b.id, importance: 2, witnesses: b.employees.slice(),
       text: `${b.name} augmente ses salaires à ${b.wage} d de l'heure.` });

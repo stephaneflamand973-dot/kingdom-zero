@@ -5,6 +5,8 @@
 // se paie à la forge, compte en combat et s'use. Le train de vie dépense
 // chaque jour l'argent du joueur chez les commerçants de sa localité.
 // ─────────────────────────────────────────────────────────────
+import { SELF_FORGE_SKILL } from './mastery';
+import { gainXp } from './skills';
 import { askPrice, P, tradeRefusal, transferMoney } from './economy';
 import { logEvent } from './events';
 import { refusalText } from './narrative';
@@ -44,6 +46,12 @@ export function gearPrice(state: GameState, forge: Business, id: GearId): number
   return Math.round(g.units * askPrice(state, forge, 'tools') * 1.15 + g.units * 12 + 8);
 }
 
+/** Prix pour ce personnage : un artisan aguerri (artisanat 50) forge lui-même et ne paie que le métal et la forge (phase 14). */
+export function gearPriceFor(state: GameState, forge: Business, id: GearId, c: Character): number {
+  const full = gearPrice(state, forge, id);
+  return c.skills.artisanat >= SELF_FORGE_SKILL ? Math.max(1, full - GEAR[id].units * 12 - 4) : full;
+}
+
 function forgeAt(state: GameState, businessId: string, p: Character): { forge?: Business; error?: string } {
   const b = state.businesses[businessId];
   if (!b || b.kind !== 'forge') return { error: 'Seule une forge fabrique armes et armures.' };
@@ -64,7 +72,9 @@ export function buyGear(state: GameState, businessId: string, id: GearId, forId?
   const g = GEAR[id];
   if (wearer.gear?.[g.slot]?.id === id && (wearer.gear[g.slot]!.wear ?? 0) === 0) return { ok: false, message: `${forId ? `${wearer.firstName} porte` : 'Tu portes'} déjà ${g.name.toLowerCase()} en bon état.`, minutes: 0 };
   if (qty(forge.stock, 'tools') < g.units) return { ok: false, message: `${forge.name} n’a pas assez de métal ouvré (${qty(forge.stock, 'tools')}/${g.units} pièces) : reviens quand la forge aura produit.`, minutes: 0 };
-  const price = gearPrice(state, forge, id);
+  // un artisan aguerri forge lui-même : il ne paie que le métal et l'usage de la forge (phase 14)
+  const self = p.skills.artisanat >= SELF_FORGE_SKILL;
+  const price = gearPriceFor(state, forge, id, p);
   if (p.money < price) return { ok: false, message: `Il te faut ${price} d.`, minutes: 0 };
   transferMoney(state, P.c(p.id), P.b(forge.id), price);
   // le métal est réellement tiré du stock de la forge
@@ -74,7 +84,8 @@ export function buyGear(state: GameState, businessId: string, id: GearId, forId?
   logEvent(state, { type: 'trade', actorId: p.id, businessId: forge.id, locationId: forge.locationId, importance: 2,
     text: `${fullName(p)} fait forger ${g.name.toLowerCase()} ${forId ? `pour ${fullName(wearer)} ` : ''}à ${forge.name} (${price} d).`, witnesses: forge.ownerId ? [forge.ownerId] : [] });
   if (forge.ownerId) modifyRelation(state, forge.ownerId, p.id, 2, 2);
-  finish(state, p, 30);
+  finish(state, p, self ? 120 : 30);
+  if (self) gainXp(state, p, 'artisanat', 2);
   if (forId) return { ok: true, message: `${wearer.firstName} reçoit ${g.name.toLowerCase()} (${g.attack ? `attaque +${g.attack}` : ''}${g.attack && g.defense ? ', ' : ''}${g.defense ? `défense +${g.defense}` : ''}). ${price} d payés à ${forge.name}.`, minutes: 30 };
   return { ok: true, message: `Te voilà équipé : ${g.name} (${g.attack ? `attaque +${g.attack}` : ''}${g.attack && g.defense ? ', ' : ''}${g.defense ? `défense +${g.defense}` : ''}). ${price} d payés à ${forge.name}.`, minutes: 30 };
 }

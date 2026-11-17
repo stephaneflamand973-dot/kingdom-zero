@@ -225,6 +225,6 @@ describe('Pas de plafond de compétence', () => {
       p.locationId = loc!.id;
       expect(practicableHere(s)).toContain(k);
     }
-    function practicableHereAt(kind: string, k: string) { return kinds.has(kind) && ({ combat: ['square'], commandement: ['square'], discretion: ['square'], agriculture: ['farm', 'woodlot', 'mine'], artisanat: ['forge', 'bakery'], commerce: ['market'], gestion: ['manor'], diplomatie: ['tavern'] } as Record<string, string[]>)[k].includes(kind); }
+    function practicableHereAt(kind: string, k: string) { return (kinds as Set<string>).has(kind) && ({ combat: ['square'], commandement: ['square'], discretion: ['square'], agriculture: ['farm', 'woodlot', 'mine'], artisanat: ['forge', 'bakery'], commerce: ['market'], gestion: ['manor'], diplomatie: ['tavern'] } as Record<string, string[]>)[k].includes(kind); }
   }, 60000);
 });

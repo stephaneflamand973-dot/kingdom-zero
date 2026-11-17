@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import {
-  GEAR, GEAR_IDS, gearPrice, buyGear, repairCost, repairGear, retinue,
+  GEAR, GEAR_IDS, gearPriceFor, buyGear, repairCost, repairGear, retinue,
   GRADE_NAMES, gradeOf, foundingCost, opportunityLabel, businessDiagnosis, moveTo, recommendedCapital,
   activeContract, applyForJob, businessesForSale, deliver, jobOffer, openOrders, quitJob, takeOrder,
-  sellOwnBusiness, saleOffer, weekResult, reserveFor, type Books,
+  masteryNotes, sellOwnBusiness, saleOffer, weekResult, reserveFor, type Books,
   buyHome, carryCapacity, found, FOUNDABLE, FOUNDING_COST, hasAccess, ITEM_IDS, leaveHome, ownerOrder, propertiesAt, purchaseBusiness,
   purchaseOffer, rentHome, RECIPES, settlementIdOf, store, takeOut, weightOf, WEIGHT, type BusinessKind, type Property,
   askPrice, businessesAt, buy, canWork, charactersAt, fullName, getRelation, isOpen, ITEMS, ITEM_ICON, moodOf,
@@ -253,6 +253,7 @@ export function OwnerPanel({ game, b }: { game: Game; b: Business }) {
           minus={() => act(s => ownerOrder(s, b.id, { kind: 'draw', delta: -10 }))}
           plus={() => act(s => ownerOrder(s, b.id, { kind: 'draw', delta: 10 }))} disabled={over} />
       </div>
+      <div className="mastery small"><b>Ton savoir-faire</b><ul>{masteryNotes(state, b).map(t => <li key={t}>{t}</li>)}</ul></div>
       <p className="muted small">Le prélèvement t’est versé chaque lundi, où que tu sois, tant que la caisse garde sa réserve de fonctionnement ({reserveFor(b)} d).</p>
       <BooksView b={b} />
       <SaleRow game={game} b={b} here={here} />
@@ -345,12 +346,12 @@ function Armory({ game, b }: { game: Game; b: Business }) {
   return (
     <details className="board armory">
       <summary className="sub">Armurerie — {metal} pièce{metal > 1 ? 's' : ''} de métal ouvré en réserve</summary>
-      <p className="muted small">Chaque arme ou armure est forgée avec le métal de la forge (ses outils en stock) : si la réserve est vide, il faut attendre qu’elle produise. L’équipement compte en combat et s’use à chaque coup.</p>
+      <p className="muted small">Chaque arme ou armure est forgée avec le métal de la forge (ses outils en stock) : si la réserve est vide, il faut attendre qu’elle produise. L’équipement compte en combat et s’use à chaque coup.{p.skills.artisanat >= 50 ? ' Artisan aguerri, tu forges toi-même (2 h) : tu ne paies que le métal et l’usage de la forge.' : ' Dès 50 en artisanat, tu pourras forger toi-même, au prix du métal.'}</p>
       {men.length > 0 && <label className="small">Pour : <select value={forId} onChange={e => setForId(e.target.value)}><option value="">toi</option>{men.map(c => <option key={c.id} value={c.id}>{fullName(c)} (homme d’armes)</option>)}</select></label>}
       <ul className="orders">
         {GEAR_IDS.map(id => {
           const g = GEAR[id];
-          const price = gearPrice(state, b, id);
+          const price = gearPriceFor(state, b, id, p);
           const worn = wearer?.gear?.[g.slot]?.id === id;
           return (
             <li key={id}>

@@ -5,6 +5,7 @@
 // hommes d'armes (payés chaque jour, ils le suivent, combattent à ses
 // côtés et peuvent être menés à la bataille pour une maison en guerre).
 // ─────────────────────────────────────────────────────────────
+import { commandExtra } from './mastery';
 import { applyWounds, autoBattle, fighterOf, type Fighter } from './combat';
 import { ITEMS, ITEM_IDS } from './data';
 import { fireEmployee, P, transferMoney } from './economy';
@@ -157,8 +158,9 @@ export function retinue(state: GameState, c: Character = state.characters[state.
 }
 export function retinueCap(c: Character, state?: GameState): number {
   // un seigneur à la tête d'une maison mène une escorte plus nombreuse, titre ou non
-  if (state && Object.values(state.orgs).some(o => o.kind === 'house' && !o.dissolved && o.leaderId === c.id)) return 8;
-  return c.title === 'conseiller' ? 6 : c.title === 'ecuyer' ? 4 : 2;
+  // le commandement permet de mener un homme de plus par tranche de 25 (phase 14)
+  if (state && Object.values(state.orgs).some(o => o.kind === 'house' && !o.dissolved && o.leaderId === c.id)) return 8 + commandExtra(c);
+  return (c.title === 'conseiller' ? 6 : c.title === 'ecuyer' ? 4 : 2) + commandExtra(c);
 }
 
 /** Qui peut être engagé ici : un adulte valide sans emploi, présent, qui ne déteste pas le joueur. */
@@ -432,7 +434,8 @@ export function warTargets(state: GameState): string[] {
 /** Effectif maximal de la garnison d'une maison menée par le joueur : 4, plus 2 par terre tenue (12 au plus). */
 export function garrisonCap(state: GameState, house: Organization): number {
   const lands = state.settlementOrder.filter(id => state.settlements[id].lordHouseId === house.id).length;
-  return Math.min(12, 4 + 2 * lands);
+  const lord = house.leaderId ? state.characters[house.leaderId] : undefined;
+  return Math.min(12, 4 + 2 * lands) + (lord ? commandExtra(lord) : 0);
 }
 
 /** Soldats de métier de la maison (soldés par son trésor ; les gardes, eux, sont payés par l'intendance). */

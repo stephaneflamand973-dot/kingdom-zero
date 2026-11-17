@@ -34,6 +34,7 @@ import { npcBorrowing, ownedBusinesses, processLoans } from './finance';
 import { merchantFulfils, postOrder, processOrders, weeklyContractReview } from './contracts';
 import { announceTourneys, hourlyTourneys } from './tourney';
 import { weeklyBooks } from './enterprise';
+import { gestionSpoil } from './mastery';
 import { festivalTonight, initialAmbition, jobHopping, processAmbitions, startFestivals, trySlander } from './society';
 import { ITEM_IDS } from './data';
 
@@ -242,15 +243,15 @@ export function dayTick(state: GameState): void {
   }
 
   // Les denrées s'abîment (pain rassis, grain charançonné)
-  const spoil = (inv: Inventory): number => {
+  const spoil = (inv: Inventory, care = 1): number => {
     let lost = 0;
     const bread = qty(inv, 'bread'), grain = qty(inv, 'grain');
-    if (bread >= 12) { const k = Math.floor(bread * 0.06); addItem(inv, 'bread', -k); addItem(state.ledger.consumed, 'bread', k); lost += k; }
-    if (grain >= 40) { const k = Math.floor(grain * 0.02); addItem(inv, 'grain', -k); addItem(state.ledger.consumed, 'grain', k); }
+    if (bread >= 12) { const k = Math.floor(bread * 0.06 * care); addItem(inv, 'bread', -k); addItem(state.ledger.consumed, 'bread', k); lost += k; }
+    if (grain >= 40) { const k = Math.floor(grain * 0.02 * care); addItem(inv, 'grain', -k); addItem(state.ledger.consumed, 'grain', k); }
     return lost;
   };
   for (const b of allBusinesses(state)) {
-    const lost = spoil(b.stock);
+    const lost = spoil(b.stock, gestionSpoil(state, b)); // une affaire bien tenue perd moins (phase 14)
     if (lost >= 4) logEvent(state, { type: 'spoilage', businessId: b.id, importance: 1, text: `${lost} miches invendues rassissent à ${b.name}.` });
   }
   for (const c of aliveCharacters(state)) spoil(c.inventory);

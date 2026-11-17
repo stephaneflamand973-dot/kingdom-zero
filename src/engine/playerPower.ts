@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────
 import { applyStance, applyWounds, exchange, fighterOf, type Fighter, type Stance } from './combat';
 import { boutAction } from './tourney';
+import { commandBonus } from './mastery';
 import { ITEMS, ITEM_IDS } from './data';
 import { P, transferItem, transferMoney } from './economy';
 import { getEvent, logEvent } from './events';
@@ -169,7 +170,8 @@ export function encounterAction(state: GameState, choice0: EncounterChoice): Act
       case 'fight': {
         // les hommes d'armes présents frappent avec le joueur et encaissent avec lui (phase 11)
         const allies = alliesAtHand(state).filter(a => a.locationId === p.locationId);
-        const af = allies.map(fighterOf);
+        const lead = commandBonus(p); // tes hommes se battent mieux sous un chef aguerri (phase 14)
+        const af = allies.map(a => { const f = fighterOf(a); f.attack += lead.attack; f.defense += lead.defense; return f; });
         exchange(state, [pf, ...af], foes, log); settle();
         allies.forEach((a, i) => e.log.push(...wearGear(state, a, true, af[i].hp < a.health)));
         for (const id of applyWounds(state, af, 0.15)) killCharacter(state, state.characters[id], 'en défendant son capitaine');

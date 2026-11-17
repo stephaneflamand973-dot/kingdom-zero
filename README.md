@@ -19,7 +19,7 @@ Autres commandes :
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 189 tests automatisés (scénarios A–G, phases 2 à 13, invariants, fuzz) |
+| `npm test` | 196 tests automatisés (scénarios A–G, phases 2 à 14, invariants, fuzz) |
 | `node scripts/check-sound.cjs` | vérifie dans un vrai navigateur (Playwright) que le son est produit, se coupe et revient |
 | `npx vite-node scripts/generations.ts 1792 42` | 16 ans simulés : population, couples, naissances, majorités |
 | `npm run build` | vérification TypeScript stricte + build de production dans `dist/` |
@@ -75,6 +75,7 @@ src/engine/        moteur pur TypeScript — aucune dépendance à React, testab
   warband.ts       bande du joueur, embuscades de caravanes, hommes d'armes, batailles (phase 11)
   fief.ts          gouverner son fief : impôt, aménagements, audiences ; chantiers des seigneurs (phase 12)
   tourney.ts       tournois de saison, assauts courtois du joueur (phase 12)
+  mastery.ts       savoir-faire : effets des compétences du propriétaire, commandement (phase 14)
 src/ui/            interface React (carte SVG, panneaux, dialogues, sauvegarde)
   audio.ts         ambiance sonore procédurale (Web Audio, aucun fichier)
   a11y.ts, prefs.ts  fenêtres accessibles (focus, Échap), préférences (son, texte, mouvement, contraste)
@@ -721,6 +722,43 @@ Aucune compétence n'est bridée : chacune peut atteindre 100 pour qui s'exerce 
   - diplomatie à l'auberge.
 - Les habitants profitent de la même courbe. Sur 16 ans, ils deviennent plus habiles et produisent davantage.
   Le chômage passe de 6 à 16 % à environ 4 %, sans mort de faim, avec des comptes exacts.
+
+## Phase 14 — le savoir-faire compte
+
+Jusqu'ici, la compétence d'un propriétaire ne changeait presque rien à son affaire. Seules les heures qu'il y
+travaillait lui-même en profitaient, et le commandement ne servait à rien. Désormais :
+
+- **Métier du propriétaire** (artisanat pour le fournil, l'auberge ou la forge ; agriculture pour la ferme, le bois
+  ou la mine) :
+  - **rendement de tout l'atelier** : de −8 % pour un novice à +28 % à 100 ;
+  - **qualité** : l'ouvrage se vend jusqu'à 12 % plus cher, et à prix voisin les clients vont chez le meilleur
+    artisan ;
+  - **tour de main** : dès 50, une fournée sur dix donne une pièce de plus, jusqu'à une sur trois à 100.
+- **Gestion du propriétaire** : les outils s'usent jusqu'à 35 % moins vite, et les réserves se perdent jusqu'à
+  60 % moins (pain rassis, grain charançonné).
+- **Commerce du propriétaire** : son affaire vend jusqu'à 5 % plus cher et rachète jusqu'à 5 % moins cher.
+- **Commandement** : sous un chef aguerri, les hommes d'armes et les soldats gagnent jusqu'à +5 en attaque et
+  +2,5 en défense, en embuscade comme en bataille (pour chaque seigneur). On mène aussi un homme de plus par
+  tranche de 25 points, dans l'escorte comme dans la garnison.
+- **Forger soi-même** : dès 50 en artisanat, on forge ses armes et ses armures en deux heures, en ne payant que le
+  métal et l'usage de la forge ; c'est aussi un exercice d'artisanat.
+- **Salaires** :
+  - le contremaître ne relève plus d'office les salaires d'une affaire du joueur, que tu fixes toi-même ;
+  - une affaire riche ne baisse plus ses gages parce que sa caisse a baissé quelques jours pendant ses achats.
+    Avant, des affaires prospères payaient 2 d de l'heure et perdaient leurs ouvriers au profit des concurrents.
+- **À l'écran** : le panneau de ton affaire montre « Ton savoir-faire », avec chaque effet chiffré, et ta fiche
+  explique à quoi sert chaque compétence.
+
+Mesure sur le fournil de Valcendre (moyenne sur 8 mondes, 16 semaines, salaire identique de 4 d de l'heure) :
+
+| Niveau du propriétaire | Ventes par semaine | Caisse finale |
+|---|---|---|
+| 10 | 901 d | 855 d |
+| 50 | 1 113 d | 1 444 d |
+| 100 | 1 142 d | 1 748 d |
+
+Les mêmes règles valent pour les propriétaires PNJ. Sur 16 ans (4 mondes) : aucun mort de faim, chômage de 2 à
+8 %, comptes exacts.
 
 ## État réel du développement
 

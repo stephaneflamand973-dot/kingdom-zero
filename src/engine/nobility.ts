@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────
 import { afterBattle, musteredFor, ownHost } from './warband';
 import { audienceRelief, npcWorks } from './fief';
+import { commandBonus } from './mastery';
 import { applyWounds, autoBattle, fighterOf, strength } from './combat';
 import { P, reserveFor, transferMoney } from './economy';
 import { logEvent } from './events';
@@ -247,6 +248,11 @@ function warWeek(state: GameState): void {
   else if (!A.length) winner = 'b';
   else {
     const fa = A.map(fighterOf), fd = D.map(fighterOf);
+    // le commandement de chaque seigneur porte ses hommes (phase 14)
+    for (const [fs, h] of [[fa, att], [fd, def]] as const) {
+      const lead = commandBonus(h.leaderId ? state.characters[h.leaderId] : undefined);
+      for (const f of fs) { f.attack += lead.attack; f.defense += lead.defense; }
+    }
     // une palissade protège ceux qui défendent leur propre localité (phase 12)
     if (target.lordHouseId === def.id && hasWork(state, target.id, 'palissade')) for (const f of fd) f.defense += 3;
     const hpA0 = fa.reduce((s, f) => s + f.hp, 0), hpD0 = fd.reduce((s, f) => s + f.hp, 0);

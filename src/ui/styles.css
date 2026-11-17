@@ -484,3 +484,7 @@ kbd { font-family: var(--serif); background: var(--wood-3); border: 1px solid va
 .books th, .books td { text-align: right; padding: 2px 6px; border-bottom: 1px solid var(--line, rgba(127,127,127,.25)); }
 .books th:first-child, .books td:first-child { text-align: left; }
 .books td.ok { color: var(--ok, #3b7d3b); } .books td.ko { color: var(--ko, #a33); }
+/* Savoir-faire du propriétaire, aide des compétences (phase 14) */
+.mastery { margin: 6px 0; } .mastery ul, .skill-help ul { margin: 4px 0 0 1.1em; padding: 0; }
+.mastery li, .skill-help li { margin: 2px 0; }
+.skill-help summary { cursor: pointer; }

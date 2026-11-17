@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  WORKS, WORK_IDS, TAX_MIN, TAX_MAX, setFiefTax, buildWork, holdAudience, computeUnrest, upcomingTourney, tourneyOpen, enterTourney, tourneyName, TOURNEY_FEE,
+  SKILL_EFFECTS, WORKS, WORK_IDS, TAX_MIN, TAX_MAX, setFiefTax, buildWork, holdAudience, computeUnrest, upcomingTourney, tourneyOpen, enterTourney, tourneyName, TOURNEY_FEE,
   garrison, garrisonCap, soldierRecruits, raiseSoldier, dismissSoldier, SOLDIER_PAY,
   houseOfPlayer, HOUSE_FOUNDING, foundHouse, houseTreasury, warTargets, declareWar, challengeGangLeader, activeWar,
   gangOf, retinue, retinueCap, recruitsHere, hireManAtArms, dismissManAtArms, gangRaid, leaveGang, RETINUE_BOUNTY, RETINUE_PAY,
@@ -91,7 +91,7 @@ function Perso({ state, game }: { state: GameState; game: Game }) {
         {(Object.keys(SKILL_NAMES) as SkillId[]).map(k => {
           const xp = p.skillXp[k] ?? 0, need = xpForNextLevel(p.skills[k]);
           return (
-            <div key={k} className="skill">
+            <div key={k} className="skill" title={SKILL_EFFECTS[k]}>
               <span>{SKILL_NAMES[k]}</span>
               <div className="skill-track"><div className="skill-fill" style={{ width: `${p.skills[k]}%` }} /><div className="skill-xp" style={{ width: `${Math.min(100, (xp / need) * 100)}%` }} /></div>
               <b>{p.skills[k]}</b>
@@ -99,6 +99,9 @@ function Perso({ state, game }: { state: GameState; game: Game }) {
           );
         })}
       </div>
+      <details className="skill-help"><summary className="small">À quoi servent tes compétences</summary>
+        <ul className="small">{(Object.keys(SKILL_NAMES) as SkillId[]).map(k => <li key={k}><b>{SKILL_NAMES[k]}</b> — {SKILL_EFFECTS[k]}</li>)}</ul>
+      </details>
       <p className="muted small">Les compétences progressent par la pratique : travail, commerce, conversation, entraînement. Aucun plafond : chaque compétence peut atteindre 100 pour qui s’exerce assez (chaque lieu permet de s’exercer à son métier). Le pas grandit un peu avec le niveau.</p>
       <div className="facts">
         <span>Travail aujourd'hui : <b>{p.hoursWorkedToday} h</b></span>

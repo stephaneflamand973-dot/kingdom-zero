@@ -143,6 +143,8 @@ export interface Books { sales: number; purchases: number; wages: number; taxes:
 export interface Business {
   /** Prélèvement hebdomadaire du propriétaire joueur, versé chaque lundi si la caisse le permet (phase 13). */
   ownerDraw?: number;
+  /** Tour de main du maître : fraction de pièce en plus accumulée fournée après fournée (phase 14). */
+  craftBonus?: number;
   /** Comptes de la semaine en cours et des quatre précédentes (affaires du joueur). */
   books?: { cur: Books; past: Books[] };
   id: string;
